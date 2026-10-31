@@ -1,0 +1,57 @@
+﻿name: ggjb
+description: "个人二手交易利润记账（本地优先，Windows + Android）。"
+publish_to: 'none'
+
+version: 1.5.1+7
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # 状态管理
+  flutter_riverpod: ^3.3.2
+
+  # 本地数据库
+  drift: ^2.31.0
+  drift_flutter: ^0.2.8
+  sqlite3_flutter_libs: ^0.5.42
+  path_provider: ^2.1.5
+  path: ^1.9.1
+
+  # 通用
+  uuid: ^4.6.0
+  intl: ^0.20.3
+  # image 4.4+ 依赖 archive ^4.5，而 excel 只能配 archive ^3.x，两者不可共存。
+  # 图片处理只用到 bakeOrientation / copyResize / encodeJpg，4.3.0 全都有。
+  image: ^4.3.0
+
+  # 动效
+  flutter_animate: ^4.5.2
+
+  # 局域网同步
+  shelf: ^1.4.3
+  shelf_router: ^1.1.5
+  http: ^1.6.0
+
+  # 导入导出 / 分享
+  # 注意：excel 依赖 archive ^3.x，与 archive ^4.x 不共存。
+  # 本项目 lib/ 里没有任何地方 import archive，所以交回给 excel 管。
+  excel: ^4.0.6
+  file_picker: ^11.0.3
+  share_plus: ^12.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  drift_dev: ^2.31.0
+  build_runner: ^2.4.13
+
+flutter:
+  uses-material-design: true

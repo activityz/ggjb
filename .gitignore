@@ -1,0 +1,29 @@
+# 构建产物（重建即可，不入库）
+build/
+dist/
+app/build/
+app/.dart_tool/
+app/android/.gradle/
+app/android/local.properties
+app/windows/flutter/ephemeral/
+app/ios/Flutter/ephemeral/
+app/macos/Flutter/ephemeral/
+
+# 生成代码（build_runner 产物；选择提交以便 clone 后直接编译，
+# 若想让仓库更干净，放开下面这行并在 README 里补一句「先跑 build_runner」）
+# app/lib/**/*.g.dart
+
+# 发布签名：绝不入库，也不外发
+app/android/key.properties
+app/android/*.jks
+app/android/*.keystore
+
+# 编辑器
+.idea/
+.vscode/
+*.iml
+
+# 临时排查日志与脚本
+_*.log
+_*.rc
+_*.ps1
