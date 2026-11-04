@@ -16,6 +16,7 @@ import '../../data/exchange/excel_import.dart';
 import '../../domain/money.dart';
 import '../../sync/exporter.dart';
 import '../../sync/client.dart';
+import '../../sync/host_server.dart';
 import '../../sync/merge.dart';
 import '../../domain/app_paths.dart';
 import '../dict/dict_manage_page.dart';
@@ -51,7 +52,9 @@ final dbStatsProvider = FutureProvider<DbStats>((ref) async {
     return (value as int?) ?? 0;
   }
 
-  final itemCount = await count('SELECT COUNT(*) AS c FROM items WHERE deleted_at IS NULL');
+  final itemCount = await count(
+    'SELECT COUNT(*) AS c FROM items WHERE deleted_at IS NULL',
+  );
   final imageCount = await count(
     'SELECT COUNT(*) AS c FROM attachments WHERE deleted_at IS NULL',
   );
@@ -75,7 +78,6 @@ final dbStatsProvider = FutureProvider<DbStats>((ref) async {
     dirPath: await AppPaths.describe(),
   );
 });
-
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -107,8 +109,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Future<void> _refreshIps() async {
     final ips = <String>[];
     try {
-      final interfaces =
-          await NetworkInterface.list(type: InternetAddressType.IPv4);
+      final interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+      );
       for (final ni in interfaces) {
         for (final addr in ni.addresses) {
           if (!addr.isLoopback) ips.add(addr.address);
@@ -160,8 +163,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('连接')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('连接'),
+          ),
         ],
       ),
     );
@@ -191,7 +200,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     try {
       await client.ping(ip, port);
       final pair = await client.pair(ip, port, code);
-      final outcome = await client.sync(host: ip, port: port, token: pair.token);
+      final outcome = await client.sync(
+        host: ip,
+        port: port,
+        token: pair.token,
+      );
       if (!mounted) return;
       setState(() => _connecting = false);
       ref.invalidate(dbStatsProvider);
@@ -221,313 +234,318 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       body: DecoratedBox(
         decoration: BoxDecoration(gradient: context.palette.pageGradient),
         child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _section('这台设备'),
-          GlassCard(
-            radius: 14,
-            blur: 12,
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.devices_other_outlined),
-                  title: const Text('设备名'),
-                  subtitle: Text(deviceName),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _renameDevice,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.tune),
-                  title: const Text('字典管理'),
-                  subtitle: const Text(
-                    '品牌 / 机型 / 内存 / 颜色 / 分类 / 来源 / 渠道 / 成色',
+          padding: const EdgeInsets.all(16),
+          children: [
+            _section('这台设备'),
+            GlassCard(
+              radius: 14,
+              blur: 12,
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.devices_other_outlined),
+                    title: const Text('设备名'),
+                    subtitle: Text(deviceName),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _renameDevice,
                   ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const DictManagePage(),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.tune),
+                    title: const Text('字典管理'),
+                    subtitle: const Text(
+                      '品牌 / 机型 / 内存 / 颜色 / 分类 / 来源 / 渠道 / 成色',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const DictManagePage(),
+                      ),
                     ),
                   ),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.receipt_long_outlined),
-                  title: const Text('运营成本'),
-                  subtitle: const Text('房租 / 水电 / 快递 / 推广，按月花的钱'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) =>
-                          const OperatingCostPage(filter: DashboardFilter()),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.receipt_long_outlined),
+                    title: const Text('运营成本'),
+                    subtitle: const Text('房租 / 水电 / 快递 / 推广，按月花的钱'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            const OperatingCostPage(filter: DashboardFilter()),
+                      ),
                     ),
                   ),
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.palette_outlined),
-                  title: const Text('主题'),
-                  subtitle: Text(
-                    _themeName(
-                      ref.watch(themeModeProvider).value ?? ThemeMode.light,
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.palette_outlined),
+                    title: const Text('主题'),
+                    subtitle: Text(
+                      _themeName(
+                        ref.watch(themeModeProvider).value ?? ThemeMode.light,
+                      ),
                     ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _pickTheme,
                   ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _pickTheme,
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
 
-          const SizedBox(height: 16),
-          _section('数据'),
-          GlassCard(
-            radius: 14,
-            blur: 12,
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: [
-                stats.when(
-                  loading: () => const ListTile(
-                    title: Text('统计中…'),
-                    trailing: SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                  error: (e, _) => ListTile(title: Text('统计失败：$e')),
-                  data: (s) => Column(
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.inventory_2_outlined),
-                        title: const Text('商品记录'),
-                        trailing: Text('${s.itemCount} 件'),
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.photo_library_outlined),
-                        title: const Text('图片'),
-                        subtitle: Text('占 ${_size(s.imageBytes)}'),
-                        trailing: Text('${s.imageCount} 张'),
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.storage_outlined),
-                        title: const Text('数据库文件'),
-                        subtitle: Text(
-                          s.dirPath,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: Text(_size(s.fileBytes)),
-                        onTap: () async {
-                          // 路径又长又难记，点一下就复制，能直接粘到资源管理器。
-                          await Clipboard.setData(ClipboardData(text: s.dirPath));
-                          if (!context.mounted) return;
-                          _toast('路径已复制');
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                aggregate.maybeWhen(
-                  data: (agg) => ListTile(
-                    leading: const Icon(Icons.savings_outlined),
-                    title: const Text('累计净到手'),
-                    trailing: Text(
-                      Money(agg.summary.netProfitCents).toYuanString(),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  orElse: () => const SizedBox.shrink(),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 16),
-          _section('备份'),
-          GlassCard(
-            radius: 14,
-            blur: 12,
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.save_alt),
-                  title: const Text('导出整库快照'),
-                  subtitle: const Text('生成一个 .db 文件，包含全部记录和图片'),
-                  trailing: _exporting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.chevron_right),
-                  onTap: _exporting ? null : _export,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.merge_type),
-                  title: const Text('导入并合并'),
-                  subtitle: const Text('选另一个设备导出的 .db，按更新时间取新的'),
-                  trailing: _importing
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.chevron_right),
-                  onTap: _importing ? null : _import,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.grid_on),
-                  title: const Text('导出 Excel'),
-                  subtitle: const Text('两个表：商品（含盈亏）+ 费用明细，可用 Excel 打开'),
-                  trailing: _excelExporting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.chevron_right),
-                  onTap: _excelExporting ? null : _exportExcel,
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.upload_file),
-                  title: const Text('导入 Excel'),
-                  subtitle: const Text('先在表里改好，再导回来；有错一行都不写'),
-                  trailing: _excelImporting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.chevron_right),
-                  onTap: _excelImporting ? null : _importExcel,
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 16),
-          _section('同步'),
-          ListenableBuilder(
-            listenable: ref.read(syncControllerProvider),
-            builder: (context, _) {
-              final sync = ref.read(syncControllerProvider);
-              final peers = ref.watch(peersProvider).value ?? const <SyncState>[];
-              return GlassCard(
-                radius: 14,
-                blur: 12,
-                padding: EdgeInsets.zero,
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: Icon(
-                        sync.hosting
-                            ? Icons.wifi_tethering
-                            : Icons.wifi_tethering_off,
-                        color: sync.hosting ? scheme.primary : null,
-                      ),
-                      title: Text(
-                        sync.hosting ? '正在等待另一台设备' : '本机作为同步主机',
-                      ),
-                      subtitle: Text(
-                        sync.hosting
-                            ? '${_addressText(sync.port)} · 配对码 ${sync.pairCode}'
-                            : peers.isEmpty
-                                ? '点「开启」在这台设备上等另一台连过来'
-                                : '配对过就会自动开着，另一台开机后能连过来',
-                      ),
-                      isThreeLine: sync.hosting && _ips.length > 1,
-                      trailing: TextButton(
-                        onPressed: () async {
-                          final error = await sync.toggleHost();
-                          if (!mounted) return;
-                          await _refreshIps();
-                          if (!mounted) return;
-                          // 失败原因必须说出来：以前这里不看不报，
-                          // 端口被占时用户只会看到按钮仍写着「开启」。
-                          if (error != null) {
-                            _toast(error);
-                          } else if (sync.hosting) {
-                            _toast('已开启，配对码 ${sync.pairCode}');
-                          }
-                        },
-                        child: Text(sync.hosting ? '停止' : '开启'),
+            const SizedBox(height: 16),
+            _section('数据'),
+            GlassCard(
+              radius: 14,
+              blur: 12,
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  stats.when(
+                    loading: () => const ListTile(
+                      title: Text('统计中…'),
+                      trailing: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.link),
-                      title: const Text('连接另一台设备'),
-                      subtitle: const Text('填对方的地址和配对码，配对后自动记住'),
-                      trailing: (sync.syncing || _connecting)
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.chevron_right),
-                      onTap: (sync.syncing || _connecting) ? null : _connectDialog,
-                    ),
-                    if (peers.isNotEmpty) ...[
-                      const Divider(height: 1),
-                      for (final peer in peers) ...[
+                    error: (e, _) => ListTile(title: Text('统计失败：$e')),
+                    data: (s) => Column(
+                      children: [
                         ListTile(
-                          leading: const Icon(Icons.devices_other),
-                          title: Text(peer.peerName ?? peer.peerId),
+                          leading: const Icon(Icons.inventory_2_outlined),
+                          title: const Text('商品记录'),
+                          trailing: Text('${s.itemCount} 件'),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.photo_library_outlined),
+                          title: const Text('图片'),
+                          subtitle: Text('占 ${_size(s.imageBytes)}'),
+                          trailing: Text('${s.imageCount} 张'),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.storage_outlined),
+                          title: const Text('数据库文件'),
                           subtitle: Text(
-                            '${peer.peerHost ?? '?'}:${peer.peerPort ?? 8787}'
-                            ' · ${_ago(peer.lastSyncAt)}',
+                            s.dirPath,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          trailing: TextButton(
-                            onPressed: () => _forgetPeer(peer.peerId),
-                            child: const Text('解绑'),
-                          ),
+                          trailing: Text(_size(s.fileBytes)),
+                          onTap: () async {
+                            // 路径又长又难记，点一下就复制，能直接粘到资源管理器。
+                            await Clipboard.setData(
+                              ClipboardData(text: s.dirPath),
+                            );
+                            if (!context.mounted) return;
+                            _toast('路径已复制');
+                          },
                         ),
                       ],
-                    ],
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      secondary: const Icon(Icons.autorenew),
-                      title: const Text('自动同步'),
-                      subtitle: const Text('改完东西就同步过去，不用手动点；连不上不打扰'),
-                      value: peers.any((p) => p.autoSync == 1),
-                      onChanged: _setAutoSync,
                     ),
-                  ],
-                ),
-              );
-            },
-          ),
-
-          const SizedBox(height: 24),
-          Center(
-            child: Text(
-              '搞个机吧 · 数据只存在本机',
-              style: TextStyle(fontSize: 12, color: scheme.outline),
+                  ),
+                  aggregate.maybeWhen(
+                    data: (agg) => ListTile(
+                      leading: const Icon(Icons.savings_outlined),
+                      title: const Text('累计净到手'),
+                      trailing: Text(
+                        Money(agg.summary.netProfitCents).toYuanString(),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    orElse: () => const SizedBox.shrink(),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 32),
-        ],
+
+            const SizedBox(height: 16),
+            _section('备份'),
+            GlassCard(
+              radius: 14,
+              blur: 12,
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.save_alt),
+                    title: const Text('导出整库快照'),
+                    subtitle: const Text('生成一个 .db 文件，包含全部记录和图片'),
+                    trailing: _exporting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.chevron_right),
+                    onTap: _exporting ? null : _export,
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.merge_type),
+                    title: const Text('导入并合并'),
+                    subtitle: const Text('选另一个设备导出的 .db，按更新时间取新的'),
+                    trailing: _importing
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.chevron_right),
+                    onTap: _importing ? null : _import,
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.grid_on),
+                    title: const Text('导出 Excel'),
+                    subtitle: const Text('两个表：商品（含盈亏）+ 费用明细，可用 Excel 打开'),
+                    trailing: _excelExporting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.chevron_right),
+                    onTap: _excelExporting ? null : _exportExcel,
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.upload_file),
+                    title: const Text('导入 Excel'),
+                    subtitle: const Text('先在表里改好，再导回来；有错一行都不写'),
+                    trailing: _excelImporting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.chevron_right),
+                    onTap: _excelImporting ? null : _importExcel,
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+            _section('同步'),
+            ListenableBuilder(
+              listenable: ref.read(syncControllerProvider),
+              builder: (context, _) {
+                final sync = ref.read(syncControllerProvider);
+                final peers =
+                    ref.watch(peersProvider).value ?? const <SyncState>[];
+                return GlassCard(
+                  radius: 14,
+                  blur: 12,
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: Icon(
+                          sync.hosting
+                              ? Icons.wifi_tethering
+                              : Icons.wifi_tethering_off,
+                          color: sync.hosting ? scheme.primary : null,
+                        ),
+                        title: Text(sync.hosting ? '正在等待另一台设备' : '本机作为同步主机'),
+                        subtitle: Text(
+                          sync.hosting
+                              ? '${_addressText(sync.port)} · 配对码 ${sync.pairCode}'
+                              : peers.isEmpty
+                              ? '点「开启」在这台设备上等另一台连过来'
+                              : '配对过就会自动开着，另一台开机后能连过来',
+                        ),
+                        isThreeLine: sync.hosting && _ips.length > 1,
+                        trailing: TextButton(
+                          onPressed: () async {
+                            final error = await sync.toggleHost();
+                            if (!mounted) return;
+                            await _refreshIps();
+                            if (!mounted) return;
+                            // 失败原因必须说出来：以前这里不看不报，
+                            // 端口被占时用户只会看到按钮仍写着「开启」。
+                            if (error != null) {
+                              _toast(error);
+                            } else if (sync.hosting) {
+                              _toast('已开启，配对码 ${sync.pairCode}');
+                            }
+                          },
+                          child: Text(sync.hosting ? '停止' : '开启'),
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      ListTile(
+                        leading: const Icon(Icons.link),
+                        title: const Text('连接另一台设备'),
+                        subtitle: const Text('填对方的地址和配对码，配对后自动记住'),
+                        trailing: (sync.syncing || _connecting)
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.chevron_right),
+                        onTap: (sync.syncing || _connecting)
+                            ? null
+                            : _connectDialog,
+                      ),
+                      if (peers.isNotEmpty) ...[
+                        const Divider(height: 1),
+                        for (final peer in peers) ...[
+                          ListTile(
+                            leading: const Icon(Icons.devices_other),
+                            title: Text(peer.peerName ?? peer.peerId),
+                            subtitle: Text(
+                              '${peer.peerHost ?? '?'}:${peer.peerPort ?? 8787}'
+                              ' · ${_ago(peer.lastSyncAt)}',
+                            ),
+                            trailing: TextButton(
+                              onPressed: () => _forgetPeer(peer.peerId),
+                              child: const Text('解绑'),
+                            ),
+                          ),
+                        ],
+                      ],
+                      const Divider(height: 1),
+                      SwitchListTile(
+                        secondary: const Icon(Icons.autorenew),
+                        title: const Text('自动同步'),
+                        subtitle: const Text('改完东西就同步过去，不用手动点；连不上不打扰'),
+                        value: peers.any((p) => p.autoSync == 1),
+                        onChanged: _setAutoSync,
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 24),
+            Center(
+              child: Text(
+                '搞个机吧 · 数据只存在本机',
+                style: TextStyle(fontSize: 12, color: scheme.outline),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
         ),
       ),
     );
   }
 
   Widget _section(String text) => Padding(
-        padding: const EdgeInsets.only(bottom: 8, left: 4),
-        child: Text(
-          text,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: 8, left: 4),
+    child: Text(
+      text,
+      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+    ),
+  );
 
   static String _size(int bytes) {
     if (bytes < 1024) return '$bytes B';
@@ -573,16 +591,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   static String _themeName(ThemeMode mode) => switch (mode) {
-        ThemeMode.light => '亮色',
-        ThemeMode.dark => '深色',
-        ThemeMode.system => '跟随系统',
-      };
+    ThemeMode.light => '亮色',
+    ThemeMode.dark => '深色',
+    ThemeMode.system => '跟随系统',
+  };
 
   static String _themeValue(ThemeMode mode) => switch (mode) {
-        ThemeMode.light => 'light',
-        ThemeMode.dark => 'dark',
-        ThemeMode.system => 'system',
-      };
+    ThemeMode.light => 'light',
+    ThemeMode.dark => 'dark',
+    ThemeMode.system => 'system',
+  };
 
   /// 自动同步开关存在 sync_states 上（每个对端一份）。
   /// 还没配对过时没有任何行可写，直接提示去配一次。
@@ -601,11 +619,30 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   /// 对端下次连过来会被要求重新配对 —— 换手机、送人都走这条路。
   Future<void> _forgetPeer(String peerId) async {
     final db = ref.read(databaseProvider);
-    await (db.delete(db.syncStates)..where((t) => t.peerId.equals(peerId))).go();
+    final row = await (db.select(
+      db.syncStates,
+    )..where((t) => t.peerId.equals(peerId))).getSingleOrNull();
+    // 先让对方作废本机令牌。只删自己这行等于没解绑 —— 对方手里那张
+    // token 还能继续推数据进来，直到它重启或手动解绑。
+    if (row != null && row.peerHost != null && row.peerToken != null) {
+      await SyncClient(
+        db: db,
+        deviceId: ref.read(deviceIdProvider),
+        deviceName: ref.read(deviceNameProvider),
+      ).unpair(
+        host: row.peerHost!,
+        port: row.peerPort ?? SyncHost.defaultPort,
+        token: row.peerToken!,
+      );
+    }
+    await (db.delete(
+      db.syncStates,
+    )..where((t) => t.peerId.equals(peerId))).go();
     if (!mounted) return;
     ref.invalidate(peersProvider);
     _toast('已解绑，下次需要重新配对');
   }
+
   Future<void> _setAutoSync(bool value) async {
     final db = ref.read(databaseProvider);
     final rows = await db.select(db.syncStates).get();
@@ -620,7 +657,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   Future<void> _renameDevice() async {
     final deviceId = ref.read(deviceIdProvider);
-    final current = ref.read(localDeviceProvider).value?.name ??
+    final current =
+        ref.read(localDeviceProvider).value?.name ??
         ref.read(deviceNameProvider);
     final controller = TextEditingController(text: current);
 
@@ -634,7 +672,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           decoration: const InputDecoration(hintText: '例：书房的电脑'),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
             child: const Text('确定'),
@@ -646,9 +687,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     if (name == null || name.isEmpty || name == current) return;
 
     final db = ref.read(databaseProvider);
-    await (db.update(db.localDevices)..where((t) => t.id.equals(deviceId))).write(
-      LocalDevicesCompanion(name: Value(name)),
-    );
+    await (db.update(db.localDevices)..where((t) => t.id.equals(deviceId)))
+        .write(LocalDevicesCompanion(name: Value(name)));
     // localDeviceProvider 是 DB 流，会自动推送新名字，不需要手动 invalidate。
     ref.invalidate(dbStatsProvider);
     if (mounted) {
@@ -661,15 +701,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Future<void> _export() async {
     setState(() => _exporting = true);
     try {
-      final file = await ExportService(ref.read(databaseProvider)).exportSnapshot();
+      final file = await ExportService(
+        ref.read(databaseProvider),
+      ).exportSnapshot();
       if (!mounted) return;
       setState(() => _exporting = false);
 
       await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(file.path)],
-          text: '搞个机吧备份',
-        ),
+        ShareParams(files: [XFile(file.path)], text: '搞个机吧备份'),
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -708,8 +747,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           '本地较新的记录不会被覆盖。合并前建议先导出一次当前数据。',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('合并')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('合并'),
+          ),
         ],
       ),
     );
@@ -717,7 +762,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
     setState(() => _importing = true);
     try {
-      final report = await MergeService(ref.read(databaseProvider)).mergeFromFile(path);
+      final report = await MergeService(
+        ref.read(databaseProvider),
+      ).mergeFromFile(path);
       if (!mounted) return;
       setState(() => _importing = false);
       ref.invalidate(dbStatsProvider);
@@ -734,16 +781,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Future<void> _exportExcel() async {
     setState(() => _excelExporting = true);
     try {
-      final result =
-          await ExcelExportService(ref.read(databaseProvider)).exportToFile();
+      final result = await ExcelExportService(
+        ref.read(databaseProvider),
+      ).exportToFile();
       if (!mounted) return;
       setState(() => _excelExporting = false);
 
       await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(result.file.path)],
-          text: '搞个机吧 · Excel 导出',
-        ),
+        ShareParams(files: [XFile(result.file.path)], text: '搞个机吧 · Excel 导出'),
       );
       if (!mounted) return;
       _toast('${result.describe()}\n${result.file.path}');

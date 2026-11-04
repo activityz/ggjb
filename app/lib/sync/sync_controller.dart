@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery, ResultSetImplementation;
+import 'package:drift/drift.dart'
+    show TableUpdate, TableUpdateQuery, ResultSetImplementation;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/providers.dart';
+import '../data/db/app_database.dart';
 import 'auto_sync.dart';
 import 'host_server.dart';
 
@@ -37,12 +39,29 @@ class SyncController extends ChangeNotifier {
   /// 否则 A 推 B、B 收到又推 A，两台机器会来回空转。
   static const _quietAfterSync = Duration(seconds: 2);
 
+  /// 需要监听的表；必须与 [MergeService.syncedTables] 一一对应。
+  ///
+  /// 少一张的后果不是「不同步」，而是「改了不触发」—— 数据最终还是会被
+  /// 25 秒的兜底轮询带走，但用户会觉得「我这边改了，对面半天没反应」。
+  /// operating_costs 就这么漏过一次。
+  static List<ResultSetImplementation> watchedTables(AppDatabase db) => [
+    db.items,
+    db.expenses,
+    db.attachments,
+    db.dictEntries,
+    db.operatingCosts,
+  ];
+
   bool _attached = false;
   bool _syncing = false;
   Timer? _debounceTimer;
   Timer? _pollTimer;
   StreamSubscription<Set<TableUpdate>>? _tableSub;
   SyncHost? _host;
+
+  /// 连不上的对端，本进程内跳过。放在 controller 而不是 [AutoSyncService]：
+  /// 那个 service 每次同步都新建，记不住上次连谁失败了。
+  final _failedPeers = <String>{};
   DateTime? _quietUntil;
   DateTime? _lastSyncAt;
   AutoSyncResult? _lastResult;
@@ -85,14 +104,7 @@ class SyncController extends ChangeNotifier {
     // 监听所有会参与同步的表。syncStates 故意排除 —— 它记的是同步自己的
     // 时间戳，把它算进来等于自己触发自己。
     _tableSub = db
-        .tableUpdates(
-          TableUpdateQuery.onAllTables(<ResultSetImplementation>[
-            db.items,
-            db.expenses,
-            db.attachments,
-            db.dictEntries,
-          ]),
-        )
+        .tableUpdates(TableUpdateQuery.onAllTables(watchedTables(db)))
         .listen((_) => markDirty());
 
     unawaited(_ensureHost());
@@ -123,13 +135,27 @@ class SyncController extends ChangeNotifier {
         db: db,
         deviceId: _ref.read(deviceIdProvider),
         deviceName: _selfName,
+        skipPeers: Set<String>.of(_failedPeers),
       );
       final result = await service.tryOnce();
       _lastResult = result;
+      final tried = service.attemptedPeerId;
+      if (tried != null) {
+        if (result.ok) {
+          _failedPeers.clear();
+        } else if (result.status == AutoSyncStatus.offline ||
+            result.status == AutoSyncStatus.failed) {
+          _failedPeers.add(tried);
+        }
+      }
 
-      if (result.ok) {
-        _lastSyncAt = DateTime.now();
-        _lastError = null;
+      // 同步失败也可能已经动过库：sync 是「先拉后推」，推失败时拉回来的
+      // 数据已经合并进本地了。所以刷新不能只在成功分支做。
+      // 连不上和没配对不算 —— 那种情况库根本没碰，白刷一次报表而已。
+      final attempted =
+          result.status != AutoSyncStatus.noPeer &&
+          result.status != AutoSyncStatus.offline;
+      if (attempted) {
         // 先捅一下计数器：报表、文件体积这类 FutureProvider 不是 drift 的
         // stream，合并改了库它们不会自己重算。
         _ref.read(syncTickProvider.notifier).bump();
@@ -143,7 +169,13 @@ class SyncController extends ChangeNotifier {
         _ref.invalidate(itemProfitLineProvider);
         _ref.invalidate(itemAttachmentsProvider);
         _ref.invalidate(attachmentThumbProvider);
-      } else if (result.shouldNotify) {
+      }
+
+      if (result.ok) {
+        _lastSyncAt = DateTime.now();
+        _lastError = null;
+      } else if (attempted) {
+        // 连不上属于日常，不打扰；其它失败留一句说明，设置页显示得出来。
         _lastError = result.describe();
       }
       return result;

@@ -58,7 +58,7 @@ class MergeService {
   /// 合并范围。`dict_entries` 也参与同步，否则换了设备品牌/机型要重配一遍。
   /// 字典的变化不进 [MergeReport] 计数 —— 用户关心的是商品记录有没有过来。
   /// v5 起 `operating_costs` 一并同步，否则换设备运营成本就丢了。
-  static const _tables = [
+  static const syncedTables = [
     'items',
     'expenses',
     'attachments',
@@ -86,11 +86,11 @@ class MergeService {
         // 统计用的本地 id 快照必须合并前取：合并之后远端独有行已经插进来了，
         // 差集恒空，所有行都会被算成「覆盖」，inserted 永远 0。
         final localIdsBefore = <String, Set<String>>{
-          for (final table in _tables) table: await _localIds(table),
+          for (final table in syncedTables) table: await _localIds(table),
         };
 
         await _db.transaction(() async {
-          for (final table in _tables) {
+          for (final table in syncedTables) {
             await _mergeTable(table);
           }
         });
@@ -192,7 +192,7 @@ class MergeService {
 
   /// 两端 schema 必须一致，否则 `SELECT *` 的列顺序会对不上，插入脏数据。
   Future<void> _verifySchema() async {
-    for (final table in _tables) {
+    for (final table in syncedTables) {
       final local = await _columns('main', table);
       final remote = await _columns('incoming', table);
       if (local.isEmpty) {

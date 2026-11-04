@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -19,10 +19,10 @@ class SyncClient {
     required String deviceId,
     required String deviceName,
     MergeService? mergeService,
-  })  : _db = db,
-        _deviceId = deviceId,
-        _deviceName = deviceName,
-        _merge = mergeService ?? MergeService(db);
+  }) : _db = db,
+       _deviceId = deviceId,
+       _deviceName = deviceName,
+       _merge = mergeService ?? MergeService(db);
 
   final AppDatabase _db;
   final String _deviceId;
@@ -41,9 +41,7 @@ class SyncClient {
 
   /// 探测对方是否在线、是不是本应用。
   Future<Map<String, dynamic>> ping(String host, int port) async {
-    final resp = await http
-        .get(_url(host, port, '/v1/info'))
-        .timeout(_timeout);
+    final resp = await http.get(_url(host, port, '/v1/info')).timeout(_timeout);
     if (resp.statusCode != 200) {
       throw SyncException('对方返回 ${resp.statusCode}');
     }
@@ -87,7 +85,9 @@ class SyncClient {
     required int port,
     required PairResult peer,
   }) async {
-    await _db.into(_db.syncStates).insertOnConflictUpdate(
+    await _db
+        .into(_db.syncStates)
+        .insertOnConflictUpdate(
           SyncStatesCompanion.insert(
             peerId: peer.deviceId.isEmpty ? '$host:$port' : peer.deviceId,
             peerName: Value(peer.deviceName),
@@ -105,24 +105,28 @@ class SyncClient {
     required int port,
     required String token,
   }) async {
-    final resp = await http
-        .get(
-          _url(host, port, '/v1/snapshot'),
-          headers: {'authorization': 'Bearer $token'},
-        )
-        .timeout(_transferTimeout);
-
-    if (resp.statusCode != 200) {
-      throw SyncException(
-        _errorOf(utf8.decode(resp.bodyBytes)) ?? '拉取快照失败（${resp.statusCode}）',
-      );
-    }
-
+    final client = http.Client();
     final tmp = await _tempFile('pull');
     try {
-      await tmp.writeAsBytes(resp.bodyBytes, flush: true);
+      final streamed = await client
+          .send(
+            http.Request('GET', _url(host, port, '/v1/snapshot'))
+              ..headers['authorization'] = 'Bearer $token',
+          )
+          .timeout(_transferTimeout);
+
+      if (streamed.statusCode != 200) {
+        final body = await streamed.stream.bytesToString();
+        throw SyncException(_errorOf(body) ?? '拉取快照失败（${streamed.statusCode}）');
+      }
+
+      // 边收边写。整库 bodyBytes 一次性进内存，图片攒多了手机上会 OOM。
+      final sink = tmp.openWrite();
+      await sink.addStream(streamed.stream);
+      await sink.close();
       return await _merge.mergeFromFile(tmp.path);
     } finally {
+      client.close();
       if (await tmp.exists()) await tmp.delete();
     }
   }
@@ -137,38 +141,66 @@ class SyncClient {
     try {
       if (await snapshot.exists()) await snapshot.delete();
       await _db.vacuumInto(snapshot.path);
-      final bytes = await snapshot.readAsBytes();
+      final length = await snapshot.length();
 
-      final resp = await http
-          .post(
-            _url(host, port, '/v1/snapshot'),
-            headers: {
-              'authorization': 'Bearer $token',
-              'content-type': 'application/octet-stream',
-            },
-            body: bytes,
-          )
-          .timeout(_transferTimeout);
-
-      final text = utf8.decode(resp.bodyBytes);
-      if (resp.statusCode != 200) {
-        throw SyncException(_errorOf(text) ?? '推送快照失败（${resp.statusCode}）');
+      // 流式上传：整库 readAsBytes 之后再 POST，等于在堆里又拷一份。
+      final client = http.Client();
+      final request =
+          http.StreamedRequest('POST', _url(host, port, '/v1/snapshot'))
+            ..headers['authorization'] = 'Bearer $token'
+            ..headers['content-type'] = 'application/octet-stream'
+            ..contentLength = length;
+      final feeding = snapshot.openRead().pipe(request.sink);
+      try {
+        final streamed = await client.send(request).timeout(_transferTimeout);
+        final text = await streamed.stream.bytesToString();
+        await feeding;
+        if (streamed.statusCode != 200) {
+          throw SyncException(
+            _errorOf(text) ?? '推送快照失败（${streamed.statusCode}）',
+          );
+        }
+        final map = jsonDecode(text) as Map<String, dynamic>;
+        return MergeReport(
+          itemsInserted: (map['items_inserted'] as num?)?.toInt() ?? 0,
+          itemsReplaced: (map['items_replaced'] as num?)?.toInt() ?? 0,
+          expensesInserted: (map['expenses_inserted'] as num?)?.toInt() ?? 0,
+          expensesReplaced: (map['expenses_replaced'] as num?)?.toInt() ?? 0,
+          attachmentsInserted:
+              (map['attachments_inserted'] as num?)?.toInt() ?? 0,
+          attachmentsReplaced:
+              (map['attachments_replaced'] as num?)?.toInt() ?? 0,
+        );
+      } finally {
+        client.close();
       }
-      final map = jsonDecode(text) as Map<String, dynamic>;
-      return MergeReport(
-        itemsInserted: (map['items_inserted'] as num?)?.toInt() ?? 0,
-        itemsReplaced: (map['items_replaced'] as num?)?.toInt() ?? 0,
-        expensesInserted: (map['expenses_inserted'] as num?)?.toInt() ?? 0,
-        expensesReplaced: (map['expenses_replaced'] as num?)?.toInt() ?? 0,
-        attachmentsInserted: (map['attachments_inserted'] as num?)?.toInt() ?? 0,
-        attachmentsReplaced: (map['attachments_replaced'] as num?)?.toInt() ?? 0,
-      );
     } finally {
       if (await snapshot.exists()) await snapshot.delete();
     }
   }
 
+  /// 解绑：让对方把本机的令牌作废并删掉对端记录。
+  ///
+  /// 失败不抛 —— 对方关机时本机仍然要能解绑，不留死连接。
+  Future<void> unpair({
+    required String host,
+    required int port,
+    required String token,
+  }) async {
+    try {
+      await http
+          .post(
+            _url(host, port, '/v1/unpair'),
+            headers: {'authorization': 'Bearer $token'},
+          )
+          .timeout(_timeout);
+    } catch (_) {
+      // 对方不在线不该阻止本机解绑。
+    }
+  }
+
   /// 完整双向同步：先验版本，再拉后推。
+
   ///
   /// 版本不一致时立刻停下 —— 两端 schema 差一代，合并会撞上
   /// [MergeService] 的列校验，报出来的「列数不一致」对用户毫无意义，
@@ -218,7 +250,11 @@ class SyncException implements Exception {
 }
 
 class PairResult {
-  PairResult({required this.token, required this.deviceId, required this.deviceName});
+  PairResult({
+    required this.token,
+    required this.deviceId,
+    required this.deviceName,
+  });
 
   final String token;
   final String deviceId;
@@ -234,6 +270,5 @@ class SyncOutcome {
   /// 本地推给对方、由对方合并的结果。
   final MergeReport pushed;
 
-  String describe() =>
-      '拉取：${pulled.describe()}；推送：${pushed.describe()}';
+  String describe() => '拉取：${pulled.describe()}；推送：${pushed.describe()}';
 }

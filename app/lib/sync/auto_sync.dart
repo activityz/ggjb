@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -80,15 +80,19 @@ class AutoSyncService {
     required AppDatabase db,
     required String deviceId,
     required String deviceName,
-  })  : _db = db,
-        _client = SyncClient(
-          db: db,
-          deviceId: deviceId,
-          deviceName: deviceName,
-        );
+    Set<String>? skipPeers,
+  }) : _db = db,
+       _skipPeers = skipPeers ?? const <String>{},
+       _client = SyncClient(db: db, deviceId: deviceId, deviceName: deviceName);
 
   final AppDatabase _db;
   final SyncClient _client;
+
+  /// 本次会话里已经连不上的对端。常关机的电脑不该把另一台堵死。
+  final Set<String> _skipPeers;
+
+  /// 最近一次 [tryOnce] 尝试的对端，供调用方记录失败、下次跳过。
+  String? attemptedPeerId;
 
   Future<AutoSyncResult> tryOnce() async {
     final peer = await _pickPeer();
@@ -96,6 +100,7 @@ class AutoSyncService {
       return const AutoSyncResult(status: AutoSyncStatus.noPeer);
     }
 
+    attemptedPeerId = peer.peerId;
     final name = peer.peerName ?? '对方设备';
     final host = peer.peerHost!;
     final port = peer.peerPort!;
@@ -118,7 +123,8 @@ class AutoSyncService {
       return AutoSyncResult(
         status: AutoSyncStatus.versionMismatch,
         peerName: name,
-        message: '两端版本不一致：本机 v${_db.schemaVersion}，对方 v$remote。\n'
+        message:
+            '两端版本不一致：本机 v${_db.schemaVersion}，对方 v$remote。\n'
             '请把两台设备都升级到同一个安装包后再同步。',
       );
     }
@@ -131,13 +137,15 @@ class AutoSyncService {
         token: peer.peerToken!,
       );
       final now = DateTime.now();
-      await (_db.update(_db.syncStates)
-            ..where((t) => t.peerId.equals(peer.peerId)))
-          .write(SyncStatesCompanion(
-        lastPullAt: Value(now),
-        lastPushAt: Value(now),
-        lastSyncAt: Value(now),
-      ));
+      await (_db.update(
+        _db.syncStates,
+      )..where((t) => t.peerId.equals(peer.peerId))).write(
+        SyncStatesCompanion(
+          lastPullAt: Value(now),
+          lastPushAt: Value(now),
+          lastSyncAt: Value(now),
+        ),
+      );
       return AutoSyncResult(
         status: AutoSyncStatus.ok,
         peerName: name,
@@ -165,11 +173,13 @@ class AutoSyncService {
     // 只做 show Value 的 import 下拿不到 `&` 运算符，而完整 import 会和
     // 业务类型撞名。行数最多两台设备，内存过滤代价可以忽略。
     final rows = (await _db.select(_db.syncStates).get())
-        .where((t) =>
-            t.autoSync == 1 &&
-            t.peerToken != null &&
-            t.peerHost != null &&
-            t.peerPort != null)
+        .where(
+          (t) =>
+              t.autoSync == 1 &&
+              t.peerToken != null &&
+              t.peerHost != null &&
+              t.peerPort != null,
+        )
         .toList();
     if (rows.isEmpty) return null;
     rows.sort((a, b) {
@@ -177,6 +187,9 @@ class AutoSyncService {
       final y = b.lastSyncAt ?? b.pairedAt;
       return y.compareTo(x);
     });
-    return rows.first;
+    // 跳过这次会话里已经失败的。全都被跳过时回退到原列表 ——
+    // 否则对方后来开机了也永远轮不到。
+    final fresh = rows.where((r) => !_skipPeers.contains(r.peerId)).toList();
+    return (fresh.isEmpty ? rows : fresh).first;
   }
 }
