@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +6,8 @@ import '../../app/palette.dart';
 import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../data/dao/stat_dao.dart';
+import '../../domain/date_period.dart';
+import '../../domain/enums.dart';
 import '../../domain/money.dart';
 import '../../domain/profit.dart';
 import '../../ui/glass_card.dart';
@@ -14,6 +16,15 @@ import '../../ui/particles.dart';
 import '../../ui/rolling_number.dart';
 import '../../ui/shimmer.dart';
 import '../../ui/tap_scale.dart';
+import '../item_list/item_list_page.dart';
+import '../operating/operating_cost_page.dart';
+
+/// 看板上的数字／胶囊点开时用的跳转：带上标题和状态口径，push 一页明细。
+typedef _OpenItems = void Function(
+  String title, {
+  ItemStatus? status,
+  Set<ItemStatus>? statuses,
+});
 
 /// 看板：一眼看到「赚了多少、压了多少钱、还有多少没卖掉」。
 ///
@@ -28,9 +39,197 @@ class DashboardPage extends ConsumerStatefulWidget {
 }
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
+  DashboardFilter _filter = DashboardFilter.all;
+
+  /// 看板筛选：日期字段 + 区间。
+  ///
+  /// 分类筛选已经拿掉了 —— 看板回答的是「这段时间挣了多少」，按分类切一刀
+  /// 只会把总数切碎，真正想看某个分类时去明细页筛更顺手。
+  ///
+  /// 默认「全部时间」：打开看板不该先被要求选个时间，看到的就是全部账。
+  /// 筛选条件只在本地 state 里，不落库：它是「现在想怎么看」，不是一台
+  /// 设备上的长期设定。
+  Future<void> _pickFilter() async {
+    var field = _filter.dateField;
+    var range = _filter.range;
+    final now = DateTime.now();
+
+    final applied = await showModalBottomSheet<DashboardFilter>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          return SafeArea(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '看哪段时间？',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '只看这段时间卖出去或买进来的单子。不选就是全部账。',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final f in DateField.values)
+                          ChoiceChip(
+                            label: Text(f.label),
+                            selected: field == f,
+                            onSelected: (_) => setLocal(() => field = f),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ActionChip(
+                          label: const Text('全部时间'),
+                          onPressed: () =>
+                              setLocal(() => range = DateRange.all),
+                        ),
+                        ActionChip(
+                          label: const Text('本月'),
+                          onPressed: () =>
+                              setLocal(() => range = DateRange.thisMonth(now)),
+                        ),
+                        ActionChip(
+                          label: const Text('上月'),
+                          onPressed: () =>
+                              setLocal(() => range = DateRange.lastMonth(now)),
+                        ),
+                        ActionChip(
+                          label: const Text('最近 7 天'),
+                          onPressed: () => setLocal(
+                            () => range = DateRange.lastDays(now, 7),
+                          ),
+                        ),
+                        ActionChip(
+                          label: const Text('今年'),
+                          onPressed: () =>
+                              setLocal(() => range = DateRange.thisYear(now)),
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.date_range, size: 16),
+                          label: const Text('自定义…'),
+                          onPressed: () async {
+                            final start = range.from ?? now;
+                            final end = range.to ?? now;
+                            final picked = await showDateRangePicker(
+                              context: ctx,
+                              firstDate: DateTime(2000),
+                              lastDate: DateTime(2100),
+                              initialDateRange: end.isBefore(start)
+                                  ? null
+                                  : DateTimeRange(start: start, end: end),
+                              helpText: '选一段时间（含首尾两天）',
+                              saveText: '就这段',
+                            );
+                            if (picked == null) return;
+                            setLocal(
+                              () => range = DateRange(
+                                from: picked.start,
+                                to: picked.end,
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      '当前：${field.label} · ${range.label}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(
+                              ctx,
+                            ).pop(const DashboardFilter()),
+                            child: const Text('重置'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () => Navigator.of(ctx).pop(
+                              DashboardFilter(
+                                dateField: field,
+                                range: range,
+                              ),
+                            ),
+                            child: const Text('应用'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (applied == null || !mounted) return;
+    setState(() => _filter = applied);
+  }
+
+  /// 点开看板上的数字 / 胶囊，看这批单子到底是谁。
+  ///
+  /// 直接 push 一个新的明细页，而不是切底部 tab：tab 里的列表带着用户自己的
+  /// 搜索词和状态，被看板覆盖掉再回来就找不回原样了。这里带上当前看板的时间
+  /// 筛选；状态可以是一组（已卖出 = 已卖出 + 已到账），所以传 statuses。
+  void _openItems(
+    String title, {
+    ItemStatus? status,
+    Set<ItemStatus>? statuses,
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: Text(title)),
+          body: ItemListPage(
+            initialFilter: ItemFilter(
+              status: status,
+              statuses: statuses,
+              dateField: _filter.range.isEmpty ? null : _filter.dateField,
+              range: _filter.range,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final async = ref.watch(profitSummaryProvider);
+    final async = ref.watch(profitSummaryProvider(_filter));
 
     return Scaffold(
       body: Stack(
@@ -58,7 +257,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 final empty =
                     agg.summary.closedCount == 0 && agg.summary.activeCount == 0;
                 if (empty) return const _EmptyDashboard();
-                return _DashboardBody(aggregate: agg);
+                return _DashboardBody(
+                  aggregate: agg,
+                  filter: _filter,
+                  onFilterTap: _pickFilter,
+                  onOpenItems: _openItems,
+                );
               },
             ),
           ),
@@ -97,9 +301,19 @@ class _EmptyDashboard extends StatelessWidget {
 }
 
 class _DashboardBody extends StatelessWidget {
-  const _DashboardBody({required this.aggregate});
+  const _DashboardBody({
+    required this.aggregate,
+    required this.filter,
+    required this.onFilterTap,
+    required this.onOpenItems,
+  });
 
   final ProfitAggregate aggregate;
+  final DashboardFilter filter;
+  final VoidCallback onFilterTap;
+
+  /// 数字点开看明细。由页面 state 提供，body 只负责把口径传下去。
+  final _OpenItems onOpenItems;
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +323,9 @@ class _DashboardBody extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _HeroCard(summary: summary)
+        _FilterBar(filter: filter, onTap: onFilterTap),
+        const SizedBox(height: 12),
+        _HeroCard(aggregate: aggregate, onOpenItems: onOpenItems)
             .animate()
             .fadeIn(duration: 420.ms, curve: Curves.easeOut)
             .slideY(
@@ -117,19 +333,33 @@ class _DashboardBody extends StatelessWidget {
               duration: 520.ms,
               curve: Curves.easeOutCubic,
             ),
+        const SizedBox(height: 6),
+        _OperatingCostLine(filter: filter),
         const SizedBox(height: 16),
-        _SectionLabel('分成四块，不混算'),
+        _SectionLabel('分成几块，不混算'),
         const SizedBox(height: 8),
         LayoutBuilder(
           builder: (context, c) {
+            // 总利润已经在上面那张大卡里，这里不再重复一张。
             final cards = [
               _MetricCard(
-                title: '已实现利润',
-                value: Money(summary.realizedProfitCents).toYuanString(),
+                title: '已到手利润',
+                value: Money(summary.settledProfitCents).toYuanString(),
                 hint: '${summary.soldCount} 单已卖出',
                 color: context.palette.profit,
-                icon: Icons.trending_up,
-                footnote: '只统计卖掉成功的单子，退货和报废不算在内',
+                icon: Icons.account_balance_wallet_outlined,
+                footnote: '钱真的收到手才算这里，一般是你把状态改成「已完成」之后',
+                onTap: () =>
+                    onOpenItems('已到手利润', status: ItemStatus.completed),
+              ),
+              _MetricCard(
+                title: '未到手利润',
+                value: Money(summary.unsettledProfitCents).toYuanString(),
+                hint: '${summary.receivableCount} 单钱还没到',
+                color: context.palette.receivable,
+                icon: Icons.hourglass_bottom,
+                footnote: '货已经卖了、钱还在买家或平台手里。每单多少是按成交价算出来的，不是估的',
+                onTap: () => onOpenItems('未到手利润', status: ItemStatus.sold),
               ),
               _MetricCard(
                 title: '待收货款',
@@ -137,7 +367,8 @@ class _DashboardBody extends StatelessWidget {
                 hint: '${summary.receivableCount} 单钱还没到',
                 color: context.palette.receivable,
                 icon: Icons.schedule,
-                footnote: '买家和平台还欠你的货款。是欠款不是利润，对应的利润已经算进左边了',
+                footnote: '买家和平台还欠你的货款。是欠款不是利润，对应的利润已经算在「未到手利润」里了',
+                onTap: () => onOpenItems('待收货款', status: ItemStatus.sold),
               ),
               _MetricCard(
                 title: '了结亏损',
@@ -154,6 +385,10 @@ class _DashboardBody extends StatelessWidget {
                 color: context.palette.warning,
                 icon: Icons.savings_outlined,
                 footnote: '压在手上的钱，不是亏损，卖掉才能变成利润',
+                onTap: () => onOpenItems(
+                  '在途占用',
+                  statuses: const {ItemStatus.inStock, ItemStatus.listed},
+                ),
               ),
             ];
 
@@ -167,22 +402,23 @@ class _DashboardBody extends StatelessWidget {
                 ],
               );
             }
-            // 宽屏两行两列。IntrinsicHeight 让同一行两张卡等高，
+            // 宽屏每行两张。IntrinsicHeight 让同一行两张卡等高，
             // 否则 footnote 行数不同会一高一低。
             return Column(
               children: [
-                for (var row = 0; row < 2; row++) ...[
+                for (var row = 0; row * 2 < cards.length; row++) ...[
                   if (row > 0) const SizedBox(height: 12),
                   IntrinsicHeight(
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        for (var col = 0; col < 2; col++) ...[
-                          if (col > 0) const SizedBox(width: 12),
-                          Expanded(
-                            child: _stagger(cards[row * 2 + col], row * 2 + col),
-                          ),
-                        ],
+                        for (var col = 0; col < 2; col++)
+                          if (row * 2 + col < cards.length) ...[
+                            if (col > 0) const SizedBox(width: 12),
+                            Expanded(
+                              child: _stagger(cards[row * 2 + col], row * 2 + col),
+                            ),
+                          ],
                       ],
                     ),
                   ),
@@ -201,14 +437,14 @@ class _DashboardBody extends StatelessWidget {
           child: Column(
             children: [
               _KvRow(
-                label: '平均每单毛利',
+                label: '平均每单利润',
                 value: summary.averageRealizedCents == null
                     ? '—'
                     : Money(summary.averageRealizedCents!).toYuanString(),
               ),
               const Divider(height: 24),
               _KvRow(
-                label: '已实现毛利率',
+                label: '已实现利润率',
                 value: _rateText(
                   summary.realizedMarginRate(aggregate.realizedCostCents),
                 ),
@@ -227,23 +463,26 @@ class _DashboardBody extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 16),
+        _SectionLabel('每月卖出'),
+        const SizedBox(height: 8),
+        _MonthlySoldCard(filter: filter),        const SizedBox(height: 16),
         _SectionLabel('按分类'),
         const SizedBox(height: 8),
         _GroupCard(
-          provider: categoryStatsProvider,
+          provider: categoryStatsProvider(filter),
           emptyHint: '还没填过分类',
         ),
         const SizedBox(height: 16),
         _SectionLabel('按卖出渠道'),
         const SizedBox(height: 8),
         _GroupCard(
-          provider: platformStatsProvider,
+          provider: platformStatsProvider(filter),
           emptyHint: '还没填过卖出渠道',
         ),
         const SizedBox(height: 16),
         _Note(
-          '毛利率的分母只是已售商品的成本，不含还在手上的货。'
-          '把在途占用算进分母会让毛利率看着很低，失去参考意义。',
+          '利润率的分母只是已售商品的成本，不含还在手上的货。'
+          '把在途占用算进分母会让利润率看着很低，失去参考意义。',
           color: scheme,
         ),
       ],
@@ -274,15 +513,19 @@ class _DashboardBody extends StatelessWidget {
 }
 
 class _HeroCard extends StatelessWidget {
-  const _HeroCard({required this.summary});
+  const _HeroCard({required this.aggregate, required this.onOpenItems});
 
-  final ProfitSummary summary;
+  final ProfitAggregate aggregate;
+  final _OpenItems onOpenItems;
 
   @override
   Widget build(BuildContext context) {
-    final net = summary.netProfitCents;
-    final money = Money(net).toYuanString();
-    final glowColor = net >= 0 ? context.palette.profit : context.palette.loss;
+    final summary = aggregate.summary;
+    // 总利润扣过运营成本（用户口径 A）。summary 里那个数是「卖货挣的」，
+    // 运营成本不是某一单的成本，所以减法只在这一层做。
+    final total = aggregate.netAfterOperatingCents;
+    final money = Money(total).toYuanString();
+    final glowColor = total >= 0 ? context.palette.profit : context.palette.loss;
 
     return TapScale(
       scale: 0.985,
@@ -322,7 +565,7 @@ class _HeroCard extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      '净到手',
+                      '总利润',
                       style: TextStyle(
                         fontSize: 13,
                         color: context.palette.textSecondary,
@@ -331,7 +574,8 @@ class _HeroCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                     Tooltip(
-                      message: '已实现利润 + 了结亏损。也就是这些单子实际给你留下的钱。',
+                      message: '已到手的利润 + 已经了结的亏损，再减掉这段时间的运营成本。'
+                          '也就是这些单子最后给你留下的钱；还在手上、没卖出去的货不算在内。',
                       child: Icon(
                         Icons.info_outline,
                         size: 15,
@@ -343,7 +587,7 @@ class _HeroCard extends StatelessWidget {
                 const SizedBox(height: 10),
                 GradientText(
                   money,
-                  gradient: moneyGradient(net, context.palette),
+                  gradient: moneyGradient(total, context.palette),
                   glow: 14,
                   glowColor: glowColor,
                   style: const TextStyle(
@@ -359,16 +603,32 @@ class _HeroCard extends StatelessWidget {
                     _Pill(
                       text: '已卖出 ${summary.soldCount}',
                       color: context.palette.profit,
+                      onTap: () => onOpenItems(
+                        '已卖出',
+                        statuses: const {
+                          ItemStatus.sold,
+                          ItemStatus.completed,
+                        },
+                      ),
                     ),
                     const SizedBox(width: 6),
                     _Pill(
                       text: '待收 ${summary.receivableCount}',
                       color: context.palette.receivable,
+                      onTap: () =>
+                          onOpenItems('待收货款', status: ItemStatus.sold),
                     ),
                     const SizedBox(width: 6),
                     _Pill(
                       text: '未卖 ${summary.activeCount}',
                       color: context.palette.warning,
+                      onTap: () => onOpenItems(
+                        '未卖出',
+                        statuses: const {
+                          ItemStatus.inStock,
+                          ItemStatus.listed,
+                        },
+                      ),
                     ),
                   ],
                 ),
@@ -435,30 +695,181 @@ class _ParallaxState extends State<_Parallax>
   }
 }
 
-/// 小胶囊标签。
+/// 小胶囊标签。带 [onTap] 时整颗可点，末尾带一个箭头暗示「点得动」。
 class _Pill extends StatelessWidget {
-  const _Pill({required this.text, required this.color});
+  const _Pill({required this.text, required this.color, this.onTap});
 
   final String text;
   final Color color;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+    final pill = Container(
+      padding: const EdgeInsets.fromLTRB(9, 4, 7, 4),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color.withValues(alpha: 0.22), width: 1),
       ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 11,
-          color: color,
-          fontWeight: FontWeight.w600,
-          fontFeatures: kTabularFigures,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 11,
+              color: color,
+              fontWeight: FontWeight.w600,
+              fontFeatures: kTabularFigures,
+            ),
+          ),
+          if (onTap != null) ...[
+            const SizedBox(width: 1),
+            Icon(Icons.chevron_right, size: 12, color: color),
+          ],
+        ],
+      ),
+    );
+    if (onTap == null) return pill;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: pill,
+    );
+  }
+}
+
+/// 近 12 个月每月卖出多少台。
+///
+/// 口径在 StatDao.monthlySoldCounts 里：只算「已卖出 / 已完成」，按卖出日期归月，
+/// 退货和报废不算 —— 它们没有真正卖出去。
+class _MonthlySoldCard extends ConsumerWidget {
+  const _MonthlySoldCard({required this.filter});
+
+  final DashboardFilter filter;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(monthlySoldProvider(filter));
+
+    return async.when(
+      loading: () => const SizedBox(
+        height: 72,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      ),
+      error: (err, _) => GlassCard(
+        radius: 14,
+        blur: 12,
+        padding: const EdgeInsets.all(16),
+        child: Text('读取失败：$err'),
+      ),
+      data: (rows) {
+        if (rows.isEmpty || rows.every((r) => r.count == 0)) {
+          return GlassCard(
+            radius: 14,
+            blur: 12,
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              '最近 12 个月还没有卖出的记录。',
+              style: TextStyle(
+                color: context.palette.textSecondary,
+                height: 1.45,
+              ),
+            ),
+          );
+        }
+
+        var max = 0;
+        for (final r in rows) {
+          if (r.count > max) max = r.count;
+        }
+        // 数据是从旧到新排的，倒过来显示，最近一个月在最上面。
+        final ordered = rows.reversed.toList();
+
+        return GlassCard(
+          radius: 14,
+          blur: 12,
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Column(
+            children: [
+              for (final r in ordered) _MonthlySoldRow(row: r, max: max),
+              const SizedBox(height: 8),
+              Text(
+                '按卖出日期归月。退货和报废的单子不算，它们没有真正卖出去。',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: context.palette.textSecondary.withValues(alpha: 0.72),
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _MonthlySoldRow extends StatelessWidget {
+  const _MonthlySoldRow({required this.row, required this.max});
+
+  final MonthlySoldCount row;
+  final int max;
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = max == 0 ? 0.0 : (row.count / max).clamp(0.0, 1.0);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 66,
+            child: Text(
+              row.label,
+              style: TextStyle(
+                fontSize: 12,
+                color: context.palette.textSecondary,
+                fontFeatures: kTabularFigures,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Container(
+              height: 8,
+              alignment: Alignment.centerLeft,
+              decoration: BoxDecoration(
+                color: context.palette.cardFill,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: FractionallySizedBox(
+                widthFactor: ratio,
+                child: Container(
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: context.palette.accent,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 40,
+            child: Text(
+              '${row.count}',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: context.palette.textPrimary,
+                fontFeatures: kTabularFigures,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -472,6 +883,7 @@ class _MetricCard extends StatelessWidget {
     required this.color,
     required this.icon,
     required this.footnote,
+    this.onTap,
   });
 
   final String title;
@@ -481,9 +893,12 @@ class _MetricCard extends StatelessWidget {
   final IconData icon;
   final String footnote;
 
+  /// 点了去哪。null = 这张卡只是个数字，点不动。
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
+    final card = GlassCard(
       radius: 14,
       blur: 12,
       padding: const EdgeInsets.all(16),
@@ -543,6 +958,12 @@ class _MetricCard extends StatelessWidget {
         ],
       ),
     );
+    if (onTap == null) return card;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: card,
+    );
   }
 }
 
@@ -567,6 +988,109 @@ class _KvRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 看板顶部的筛选条：一行说明现在的口径，点开换。
+class _FilterBar extends StatelessWidget {
+  const _FilterBar({required this.filter, required this.onTap});
+
+  final DashboardFilter filter;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final text = filter.isAll
+        ? '全部时间'
+        : '${filter.dateField.label} · ${filter.range.label}';
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 40,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: palette.cardFill,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.filter_alt_outlined,
+              size: 16,
+              color: palette.textSecondary,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: palette.textSecondary),
+              ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: palette.textSecondary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 总利润下面那行小字：这段时间花了多少运营成本，点进去记 / 看。
+///
+/// 它已经从总利润里扣掉了，这里不再重复减，只是把扣了多少摊开 ——
+/// 不然总利润少了会觉得账对不上。
+class _OperatingCostLine extends ConsumerWidget {
+  const _OperatingCostLine({required this.filter});
+
+  final DashboardFilter filter;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final palette = context.palette;
+    final total = ref.watch(operatingTotalProvider(filter)).value ?? 0;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => OperatingCostPage(filter: filter),
+          ),
+        ),
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.receipt_long_outlined,
+                size: 13,
+                color: palette.textSecondary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '运营成本 ${Money(total).toYuanString()}，已从总利润里扣',
+                style: TextStyle(fontSize: 12, color: palette.textSecondary),
+              ),
+              Icon(
+                Icons.chevron_right,
+                size: 14,
+                color: palette.textSecondary,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

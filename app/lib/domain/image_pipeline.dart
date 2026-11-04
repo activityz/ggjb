@@ -80,7 +80,14 @@ class ImagePipeline {
     int quality = 85,
     int thumbQuality = 80,
   }) {
-    final decoded = img.decodeImage(input);
+    // decodeImage 对过短字节抛的是 RangeError 而不是返回 null，
+    // 不兜住的话用户看到的是一串英文越界栈。
+    img.Image? decoded;
+    try {
+      decoded = img.decodeImage(input);
+    } catch (_) {
+      decoded = null;
+    }
     if (decoded == null) {
       throw const ImagePipelineException('无法解析这张图片，可能格式不支持或文件已损坏');
     }

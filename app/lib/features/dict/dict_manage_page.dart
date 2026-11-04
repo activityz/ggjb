@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/palette.dart';
@@ -147,14 +147,20 @@ class _KindTabState extends ConsumerState<_KindTab> {
                     ),
                   ),
                 )
-              : ListView.builder(
+              : ReorderableListView.builder(
                   itemCount: items.length,
+                  // 排序即所见：长按拖到想要的位置，松手就写库。
+                  // 手机上没有「上移一行」按钮的余地，拖拽最省心；
+                  // 桌面端 ReorderableListView 自带拖拽手柄。
+                  onReorderItem: (oldIndex, newIndex) =>
+                      _reorder(ref, items, oldIndex, newIndex),
                   itemBuilder: (_, i) {
                     final e = items[i];
                     final parent = e.parentId == null
                         ? null
                         : (idToLabel[e.parentId!] ?? '（品牌已删除）');
                     return ListTile(
+                      key: ValueKey(e.id),
                       dense: true,
                       leading: e.builtIn == 1
                           ? const SizedBox(width: 4)
@@ -184,6 +190,24 @@ class _KindTabState extends ConsumerState<_KindTab> {
         ),
       ],
     );
+  }
+
+  /// 拖完一项就整段重排（不是交换两项）：老库的 sortOrder 可能全是 0，
+  /// 交换 0 和 0 等于没动，重排一次顺便把它们规范化成 0..n-1。
+  Future<void> _reorder(
+    WidgetRef ref,
+    List<DictEntry> items,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    // onReorderItem 给的已经是「移除之后」的插入位置，
+    // 直接 removeAt + insert 就落到手指松开的地方，不用再减一。
+    final target = newIndex;
+    if (target == oldIndex) return;
+    final next = [...items];
+    final moved = next.removeAt(oldIndex);
+    next.insert(target, moved);
+    await ref.read(dictDaoProvider).reorder(next);
   }
 
   Future<void> _add(

@@ -235,6 +235,39 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _batteryHealthMeta = const VerificationMeta(
+    'batteryHealth',
+  );
+  @override
+  late final GeneratedColumn<int> batteryHealth = GeneratedColumn<int>(
+    'battery_health',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _listPriceCentsMeta = const VerificationMeta(
+    'listPriceCents',
+  );
+  @override
+  late final GeneratedColumn<int> listPriceCents = GeneratedColumn<int>(
+    'list_price_cents',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _tradeInCentsMeta = const VerificationMeta(
+    'tradeInCents',
+  );
+  @override
+  late final GeneratedColumn<int> tradeInCents = GeneratedColumn<int>(
+    'trade_in_cents',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -259,6 +292,9 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
     updatedAt,
     deletedAt,
     deviceId,
+    batteryHealth,
+    listPriceCents,
+    tradeInCents,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -425,6 +461,33 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
     } else if (isInserting) {
       context.missing(_deviceIdMeta);
     }
+    if (data.containsKey('battery_health')) {
+      context.handle(
+        _batteryHealthMeta,
+        batteryHealth.isAcceptableOrUnknown(
+          data['battery_health']!,
+          _batteryHealthMeta,
+        ),
+      );
+    }
+    if (data.containsKey('list_price_cents')) {
+      context.handle(
+        _listPriceCentsMeta,
+        listPriceCents.isAcceptableOrUnknown(
+          data['list_price_cents']!,
+          _listPriceCentsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('trade_in_cents')) {
+      context.handle(
+        _tradeInCentsMeta,
+        tradeInCents.isAcceptableOrUnknown(
+          data['trade_in_cents']!,
+          _tradeInCentsMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -524,6 +587,18 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
         DriftSqlType.string,
         data['${effectivePrefix}device_id'],
       )!,
+      batteryHealth: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}battery_health'],
+      ),
+      listPriceCents: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}list_price_cents'],
+      ),
+      tradeInCents: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}trade_in_cents'],
+      ),
     );
   }
 
@@ -571,6 +646,24 @@ class Item extends DataClass implements Insertable<Item> {
   final DateTime updatedAt;
   final DateTime? deletedAt;
   final String deviceId;
+
+  /// 电池健康百分比（0–100 整数）。null = 没测或没填。
+  ///
+  /// 用整数而不是「95新」这类文本：以后要按它排序、算均值、看衰减曲线，
+  /// 文本没法比大小。
+  final int? batteryHealth;
+
+  /// 置换时的挂牌价（分）。例：挂牌 1000、旧机抵 600、实收 400。
+  ///
+  /// [sellPriceCents] 存的是**实收**（参与利润），这里只做记录，
+  /// 两者之差就是抵扣额。挂牌价为空表示普通交易。
+  final int? listPriceCents;
+
+  /// 置换时买家旧机折的价（分）。
+  ///
+  /// **当前不参与利润计算**：旧机的价值要等它作为新商品再卖出去才结算，
+  /// 否则同一笔 600 元会被算两次。只单独展示。
+  final int? tradeInCents;
   const Item({
     required this.id,
     required this.title,
@@ -594,6 +687,9 @@ class Item extends DataClass implements Insertable<Item> {
     required this.updatedAt,
     this.deletedAt,
     required this.deviceId,
+    this.batteryHealth,
+    this.listPriceCents,
+    this.tradeInCents,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -654,6 +750,15 @@ class Item extends DataClass implements Insertable<Item> {
       map['deleted_at'] = Variable<DateTime>(deletedAt);
     }
     map['device_id'] = Variable<String>(deviceId);
+    if (!nullToAbsent || batteryHealth != null) {
+      map['battery_health'] = Variable<int>(batteryHealth);
+    }
+    if (!nullToAbsent || listPriceCents != null) {
+      map['list_price_cents'] = Variable<int>(listPriceCents);
+    }
+    if (!nullToAbsent || tradeInCents != null) {
+      map['trade_in_cents'] = Variable<int>(tradeInCents);
+    }
     return map;
   }
 
@@ -709,6 +814,15 @@ class Item extends DataClass implements Insertable<Item> {
           ? const Value.absent()
           : Value(deletedAt),
       deviceId: Value(deviceId),
+      batteryHealth: batteryHealth == null && nullToAbsent
+          ? const Value.absent()
+          : Value(batteryHealth),
+      listPriceCents: listPriceCents == null && nullToAbsent
+          ? const Value.absent()
+          : Value(listPriceCents),
+      tradeInCents: tradeInCents == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tradeInCents),
     );
   }
 
@@ -740,6 +854,9 @@ class Item extends DataClass implements Insertable<Item> {
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       deviceId: serializer.fromJson<String>(json['deviceId']),
+      batteryHealth: serializer.fromJson<int?>(json['batteryHealth']),
+      listPriceCents: serializer.fromJson<int?>(json['listPriceCents']),
+      tradeInCents: serializer.fromJson<int?>(json['tradeInCents']),
     );
   }
   @override
@@ -768,6 +885,9 @@ class Item extends DataClass implements Insertable<Item> {
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'deviceId': serializer.toJson<String>(deviceId),
+      'batteryHealth': serializer.toJson<int?>(batteryHealth),
+      'listPriceCents': serializer.toJson<int?>(listPriceCents),
+      'tradeInCents': serializer.toJson<int?>(tradeInCents),
     };
   }
 
@@ -794,6 +914,9 @@ class Item extends DataClass implements Insertable<Item> {
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
     String? deviceId,
+    Value<int?> batteryHealth = const Value.absent(),
+    Value<int?> listPriceCents = const Value.absent(),
+    Value<int?> tradeInCents = const Value.absent(),
   }) => Item(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -825,6 +948,13 @@ class Item extends DataClass implements Insertable<Item> {
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     deviceId: deviceId ?? this.deviceId,
+    batteryHealth: batteryHealth.present
+        ? batteryHealth.value
+        : this.batteryHealth,
+    listPriceCents: listPriceCents.present
+        ? listPriceCents.value
+        : this.listPriceCents,
+    tradeInCents: tradeInCents.present ? tradeInCents.value : this.tradeInCents,
   );
   Item copyWithCompanion(ItemsCompanion data) {
     return Item(
@@ -862,6 +992,15 @@ class Item extends DataClass implements Insertable<Item> {
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+      batteryHealth: data.batteryHealth.present
+          ? data.batteryHealth.value
+          : this.batteryHealth,
+      listPriceCents: data.listPriceCents.present
+          ? data.listPriceCents.value
+          : this.listPriceCents,
+      tradeInCents: data.tradeInCents.present
+          ? data.tradeInCents.value
+          : this.tradeInCents,
     );
   }
 
@@ -889,7 +1028,10 @@ class Item extends DataClass implements Insertable<Item> {
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
-          ..write('deviceId: $deviceId')
+          ..write('deviceId: $deviceId, ')
+          ..write('batteryHealth: $batteryHealth, ')
+          ..write('listPriceCents: $listPriceCents, ')
+          ..write('tradeInCents: $tradeInCents')
           ..write(')'))
         .toString();
   }
@@ -918,6 +1060,9 @@ class Item extends DataClass implements Insertable<Item> {
     updatedAt,
     deletedAt,
     deviceId,
+    batteryHealth,
+    listPriceCents,
+    tradeInCents,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -944,7 +1089,10 @@ class Item extends DataClass implements Insertable<Item> {
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt &&
-          other.deviceId == this.deviceId);
+          other.deviceId == this.deviceId &&
+          other.batteryHealth == this.batteryHealth &&
+          other.listPriceCents == this.listPriceCents &&
+          other.tradeInCents == this.tradeInCents);
 }
 
 class ItemsCompanion extends UpdateCompanion<Item> {
@@ -970,6 +1118,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
   final Value<String> deviceId;
+  final Value<int?> batteryHealth;
+  final Value<int?> listPriceCents;
+  final Value<int?> tradeInCents;
   final Value<int> rowid;
   const ItemsCompanion({
     this.id = const Value.absent(),
@@ -994,6 +1145,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
     this.deviceId = const Value.absent(),
+    this.batteryHealth = const Value.absent(),
+    this.listPriceCents = const Value.absent(),
+    this.tradeInCents = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ItemsCompanion.insert({
@@ -1019,6 +1173,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
     required DateTime updatedAt,
     this.deletedAt = const Value.absent(),
     required String deviceId,
+    this.batteryHealth = const Value.absent(),
+    this.listPriceCents = const Value.absent(),
+    this.tradeInCents = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        title = Value(title),
@@ -1049,6 +1206,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
     Expression<DateTime>? updatedAt,
     Expression<DateTime>? deletedAt,
     Expression<String>? deviceId,
+    Expression<int>? batteryHealth,
+    Expression<int>? listPriceCents,
+    Expression<int>? tradeInCents,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1074,6 +1234,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (deviceId != null) 'device_id': deviceId,
+      if (batteryHealth != null) 'battery_health': batteryHealth,
+      if (listPriceCents != null) 'list_price_cents': listPriceCents,
+      if (tradeInCents != null) 'trade_in_cents': tradeInCents,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1101,6 +1264,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
     Value<DateTime>? updatedAt,
     Value<DateTime?>? deletedAt,
     Value<String>? deviceId,
+    Value<int?>? batteryHealth,
+    Value<int?>? listPriceCents,
+    Value<int?>? tradeInCents,
     Value<int>? rowid,
   }) {
     return ItemsCompanion(
@@ -1126,6 +1292,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
       deviceId: deviceId ?? this.deviceId,
+      batteryHealth: batteryHealth ?? this.batteryHealth,
+      listPriceCents: listPriceCents ?? this.listPriceCents,
+      tradeInCents: tradeInCents ?? this.tradeInCents,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1201,6 +1370,15 @@ class ItemsCompanion extends UpdateCompanion<Item> {
     if (deviceId.present) {
       map['device_id'] = Variable<String>(deviceId.value);
     }
+    if (batteryHealth.present) {
+      map['battery_health'] = Variable<int>(batteryHealth.value);
+    }
+    if (listPriceCents.present) {
+      map['list_price_cents'] = Variable<int>(listPriceCents.value);
+    }
+    if (tradeInCents.present) {
+      map['trade_in_cents'] = Variable<int>(tradeInCents.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1232,6 +1410,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('deviceId: $deviceId, ')
+          ..write('batteryHealth: $batteryHealth, ')
+          ..write('listPriceCents: $listPriceCents, ')
+          ..write('tradeInCents: $tradeInCents, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4188,6 +4369,573 @@ class DictEntriesCompanion extends UpdateCompanion<DictEntry> {
   }
 }
 
+class $OperatingCostsTable extends OperatingCosts
+    with TableInfo<$OperatingCostsTable, OperatingCost> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $OperatingCostsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _spentAtMeta = const VerificationMeta(
+    'spentAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> spentAt = GeneratedColumn<DateTime>(
+    'spent_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _amountCentsMeta = const VerificationMeta(
+    'amountCents',
+  );
+  @override
+  late final GeneratedColumn<int> amountCents = GeneratedColumn<int>(
+    'amount_cents',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+    'note',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _deviceIdMeta = const VerificationMeta(
+    'deviceId',
+  );
+  @override
+  late final GeneratedColumn<String> deviceId = GeneratedColumn<String>(
+    'device_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    spentAt,
+    kind,
+    amountCents,
+    note,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    deviceId,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'operating_costs';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<OperatingCost> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('spent_at')) {
+      context.handle(
+        _spentAtMeta,
+        spentAt.isAcceptableOrUnknown(data['spent_at']!, _spentAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_spentAtMeta);
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('amount_cents')) {
+      context.handle(
+        _amountCentsMeta,
+        amountCents.isAcceptableOrUnknown(
+          data['amount_cents']!,
+          _amountCentsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_amountCentsMeta);
+    }
+    if (data.containsKey('note')) {
+      context.handle(
+        _noteMeta,
+        note.isAcceptableOrUnknown(data['note']!, _noteMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    if (data.containsKey('device_id')) {
+      context.handle(
+        _deviceIdMeta,
+        deviceId.isAcceptableOrUnknown(data['device_id']!, _deviceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deviceIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  OperatingCost map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return OperatingCost(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      spentAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}spent_at'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      amountCents: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}amount_cents'],
+      )!,
+      note: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
+      deviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}device_id'],
+      )!,
+    );
+  }
+
+  @override
+  $OperatingCostsTable createAlias(String alias) {
+    return $OperatingCostsTable(attachedDatabase, alias);
+  }
+}
+
+class OperatingCost extends DataClass implements Insertable<OperatingCost> {
+  final String id;
+
+  /// 发生日期。看板按它做时间筛选，必填（默认今天）。
+  final DateTime spentAt;
+
+  /// 类别文本快照，来自字典 `dict_entries.kind = 'operating'`。
+  ///
+  /// 存文本不存外键，和商品表的品牌/分类一致：字典改名不回写历史。
+  final String kind;
+  final int amountCents;
+  final String? note;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  final String deviceId;
+  const OperatingCost({
+    required this.id,
+    required this.spentAt,
+    required this.kind,
+    required this.amountCents,
+    this.note,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+    required this.deviceId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['spent_at'] = Variable<DateTime>(spentAt);
+    map['kind'] = Variable<String>(kind);
+    map['amount_cents'] = Variable<int>(amountCents);
+    if (!nullToAbsent || note != null) {
+      map['note'] = Variable<String>(note);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
+    map['device_id'] = Variable<String>(deviceId);
+    return map;
+  }
+
+  OperatingCostsCompanion toCompanion(bool nullToAbsent) {
+    return OperatingCostsCompanion(
+      id: Value(id),
+      spentAt: Value(spentAt),
+      kind: Value(kind),
+      amountCents: Value(amountCents),
+      note: note == null && nullToAbsent ? const Value.absent() : Value(note),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      deviceId: Value(deviceId),
+    );
+  }
+
+  factory OperatingCost.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return OperatingCost(
+      id: serializer.fromJson<String>(json['id']),
+      spentAt: serializer.fromJson<DateTime>(json['spentAt']),
+      kind: serializer.fromJson<String>(json['kind']),
+      amountCents: serializer.fromJson<int>(json['amountCents']),
+      note: serializer.fromJson<String?>(json['note']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      deviceId: serializer.fromJson<String>(json['deviceId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'spentAt': serializer.toJson<DateTime>(spentAt),
+      'kind': serializer.toJson<String>(kind),
+      'amountCents': serializer.toJson<int>(amountCents),
+      'note': serializer.toJson<String?>(note),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'deviceId': serializer.toJson<String>(deviceId),
+    };
+  }
+
+  OperatingCost copyWith({
+    String? id,
+    DateTime? spentAt,
+    String? kind,
+    int? amountCents,
+    Value<String?> note = const Value.absent(),
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+    String? deviceId,
+  }) => OperatingCost(
+    id: id ?? this.id,
+    spentAt: spentAt ?? this.spentAt,
+    kind: kind ?? this.kind,
+    amountCents: amountCents ?? this.amountCents,
+    note: note.present ? note.value : this.note,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    deviceId: deviceId ?? this.deviceId,
+  );
+  OperatingCost copyWithCompanion(OperatingCostsCompanion data) {
+    return OperatingCost(
+      id: data.id.present ? data.id.value : this.id,
+      spentAt: data.spentAt.present ? data.spentAt.value : this.spentAt,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      amountCents: data.amountCents.present
+          ? data.amountCents.value
+          : this.amountCents,
+      note: data.note.present ? data.note.value : this.note,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OperatingCost(')
+          ..write('id: $id, ')
+          ..write('spentAt: $spentAt, ')
+          ..write('kind: $kind, ')
+          ..write('amountCents: $amountCents, ')
+          ..write('note: $note, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('deviceId: $deviceId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    spentAt,
+    kind,
+    amountCents,
+    note,
+    createdAt,
+    updatedAt,
+    deletedAt,
+    deviceId,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is OperatingCost &&
+          other.id == this.id &&
+          other.spentAt == this.spentAt &&
+          other.kind == this.kind &&
+          other.amountCents == this.amountCents &&
+          other.note == this.note &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt &&
+          other.deviceId == this.deviceId);
+}
+
+class OperatingCostsCompanion extends UpdateCompanion<OperatingCost> {
+  final Value<String> id;
+  final Value<DateTime> spentAt;
+  final Value<String> kind;
+  final Value<int> amountCents;
+  final Value<String?> note;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<String> deviceId;
+  final Value<int> rowid;
+  const OperatingCostsCompanion({
+    this.id = const Value.absent(),
+    this.spentAt = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.amountCents = const Value.absent(),
+    this.note = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  OperatingCostsCompanion.insert({
+    required String id,
+    required DateTime spentAt,
+    required String kind,
+    required int amountCents,
+    this.note = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
+    required String deviceId,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       spentAt = Value(spentAt),
+       kind = Value(kind),
+       amountCents = Value(amountCents),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt),
+       deviceId = Value(deviceId);
+  static Insertable<OperatingCost> custom({
+    Expression<String>? id,
+    Expression<DateTime>? spentAt,
+    Expression<String>? kind,
+    Expression<int>? amountCents,
+    Expression<String>? note,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
+    Expression<String>? deviceId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (spentAt != null) 'spent_at': spentAt,
+      if (kind != null) 'kind': kind,
+      if (amountCents != null) 'amount_cents': amountCents,
+      if (note != null) 'note': note,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (deviceId != null) 'device_id': deviceId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  OperatingCostsCompanion copyWith({
+    Value<String>? id,
+    Value<DateTime>? spentAt,
+    Value<String>? kind,
+    Value<int>? amountCents,
+    Value<String?>? note,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<String>? deviceId,
+    Value<int>? rowid,
+  }) {
+    return OperatingCostsCompanion(
+      id: id ?? this.id,
+      spentAt: spentAt ?? this.spentAt,
+      kind: kind ?? this.kind,
+      amountCents: amountCents ?? this.amountCents,
+      note: note ?? this.note,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deviceId: deviceId ?? this.deviceId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (spentAt.present) {
+      map['spent_at'] = Variable<DateTime>(spentAt.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (amountCents.present) {
+      map['amount_cents'] = Variable<int>(amountCents.value);
+    }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
+    if (deviceId.present) {
+      map['device_id'] = Variable<String>(deviceId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OperatingCostsCompanion(')
+          ..write('id: $id, ')
+          ..write('spentAt: $spentAt, ')
+          ..write('kind: $kind, ')
+          ..write('amountCents: $amountCents, ')
+          ..write('note: $note, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -4197,6 +4945,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $SyncStatesTable syncStates = $SyncStatesTable(this);
   late final $LocalDevicesTable localDevices = $LocalDevicesTable(this);
   late final $DictEntriesTable dictEntries = $DictEntriesTable(this);
+  late final $OperatingCostsTable operatingCosts = $OperatingCostsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -4208,6 +4957,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     syncStates,
     localDevices,
     dictEntries,
+    operatingCosts,
   ];
 }
 
@@ -4235,6 +4985,9 @@ typedef $$ItemsTableCreateCompanionBuilder =
       required DateTime updatedAt,
       Value<DateTime?> deletedAt,
       required String deviceId,
+      Value<int?> batteryHealth,
+      Value<int?> listPriceCents,
+      Value<int?> tradeInCents,
       Value<int> rowid,
     });
 typedef $$ItemsTableUpdateCompanionBuilder =
@@ -4261,6 +5014,9 @@ typedef $$ItemsTableUpdateCompanionBuilder =
       Value<DateTime> updatedAt,
       Value<DateTime?> deletedAt,
       Value<String> deviceId,
+      Value<int?> batteryHealth,
+      Value<int?> listPriceCents,
+      Value<int?> tradeInCents,
       Value<int> rowid,
     });
 
@@ -4380,6 +5136,21 @@ class $$ItemsTableFilterComposer extends Composer<_$AppDatabase, $ItemsTable> {
 
   ColumnFilters<String> get deviceId => $composableBuilder(
     column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get batteryHealth => $composableBuilder(
+    column: $table.batteryHealth,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get listPriceCents => $composableBuilder(
+    column: $table.listPriceCents,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get tradeInCents => $composableBuilder(
+    column: $table.tradeInCents,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -4502,6 +5273,21 @@ class $$ItemsTableOrderingComposer
     column: $table.deviceId,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get batteryHealth => $composableBuilder(
+    column: $table.batteryHealth,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get listPriceCents => $composableBuilder(
+    column: $table.listPriceCents,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get tradeInCents => $composableBuilder(
+    column: $table.tradeInCents,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ItemsTableAnnotationComposer
@@ -4590,6 +5376,21 @@ class $$ItemsTableAnnotationComposer
 
   GeneratedColumn<String> get deviceId =>
       $composableBuilder(column: $table.deviceId, builder: (column) => column);
+
+  GeneratedColumn<int> get batteryHealth => $composableBuilder(
+    column: $table.batteryHealth,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get listPriceCents => $composableBuilder(
+    column: $table.listPriceCents,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get tradeInCents => $composableBuilder(
+    column: $table.tradeInCents,
+    builder: (column) => column,
+  );
 }
 
 class $$ItemsTableTableManager
@@ -4642,6 +5443,9 @@ class $$ItemsTableTableManager
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
                 Value<String> deviceId = const Value.absent(),
+                Value<int?> batteryHealth = const Value.absent(),
+                Value<int?> listPriceCents = const Value.absent(),
+                Value<int?> tradeInCents = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemsCompanion(
                 id: id,
@@ -4666,6 +5470,9 @@ class $$ItemsTableTableManager
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
                 deviceId: deviceId,
+                batteryHealth: batteryHealth,
+                listPriceCents: listPriceCents,
+                tradeInCents: tradeInCents,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4692,6 +5499,9 @@ class $$ItemsTableTableManager
                 required DateTime updatedAt,
                 Value<DateTime?> deletedAt = const Value.absent(),
                 required String deviceId,
+                Value<int?> batteryHealth = const Value.absent(),
+                Value<int?> listPriceCents = const Value.absent(),
+                Value<int?> tradeInCents = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemsCompanion.insert(
                 id: id,
@@ -4716,6 +5526,9 @@ class $$ItemsTableTableManager
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
                 deviceId: deviceId,
+                batteryHealth: batteryHealth,
+                listPriceCents: listPriceCents,
+                tradeInCents: tradeInCents,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -6178,6 +6991,286 @@ typedef $$DictEntriesTableProcessedTableManager =
       DictEntry,
       PrefetchHooks Function()
     >;
+typedef $$OperatingCostsTableCreateCompanionBuilder =
+    OperatingCostsCompanion Function({
+      required String id,
+      required DateTime spentAt,
+      required String kind,
+      required int amountCents,
+      Value<String?> note,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      required String deviceId,
+      Value<int> rowid,
+    });
+typedef $$OperatingCostsTableUpdateCompanionBuilder =
+    OperatingCostsCompanion Function({
+      Value<String> id,
+      Value<DateTime> spentAt,
+      Value<String> kind,
+      Value<int> amountCents,
+      Value<String?> note,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<String> deviceId,
+      Value<int> rowid,
+    });
+
+class $$OperatingCostsTableFilterComposer
+    extends Composer<_$AppDatabase, $OperatingCostsTable> {
+  $$OperatingCostsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get spentAt => $composableBuilder(
+    column: $table.spentAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get amountCents => $composableBuilder(
+    column: $table.amountCents,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$OperatingCostsTableOrderingComposer
+    extends Composer<_$AppDatabase, $OperatingCostsTable> {
+  $$OperatingCostsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get spentAt => $composableBuilder(
+    column: $table.spentAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get amountCents => $composableBuilder(
+    column: $table.amountCents,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$OperatingCostsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $OperatingCostsTable> {
+  $$OperatingCostsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get spentAt =>
+      $composableBuilder(column: $table.spentAt, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<int> get amountCents => $composableBuilder(
+    column: $table.amountCents,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+}
+
+class $$OperatingCostsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $OperatingCostsTable,
+          OperatingCost,
+          $$OperatingCostsTableFilterComposer,
+          $$OperatingCostsTableOrderingComposer,
+          $$OperatingCostsTableAnnotationComposer,
+          $$OperatingCostsTableCreateCompanionBuilder,
+          $$OperatingCostsTableUpdateCompanionBuilder,
+          (
+            OperatingCost,
+            BaseReferences<_$AppDatabase, $OperatingCostsTable, OperatingCost>,
+          ),
+          OperatingCost,
+          PrefetchHooks Function()
+        > {
+  $$OperatingCostsTableTableManager(
+    _$AppDatabase db,
+    $OperatingCostsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$OperatingCostsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$OperatingCostsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$OperatingCostsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<DateTime> spentAt = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<int> amountCents = const Value.absent(),
+                Value<String?> note = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<String> deviceId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => OperatingCostsCompanion(
+                id: id,
+                spentAt: spentAt,
+                kind: kind,
+                amountCents: amountCents,
+                note: note,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                deviceId: deviceId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required DateTime spentAt,
+                required String kind,
+                required int amountCents,
+                Value<String?> note = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<DateTime?> deletedAt = const Value.absent(),
+                required String deviceId,
+                Value<int> rowid = const Value.absent(),
+              }) => OperatingCostsCompanion.insert(
+                id: id,
+                spentAt: spentAt,
+                kind: kind,
+                amountCents: amountCents,
+                note: note,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                deviceId: deviceId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$OperatingCostsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $OperatingCostsTable,
+      OperatingCost,
+      $$OperatingCostsTableFilterComposer,
+      $$OperatingCostsTableOrderingComposer,
+      $$OperatingCostsTableAnnotationComposer,
+      $$OperatingCostsTableCreateCompanionBuilder,
+      $$OperatingCostsTableUpdateCompanionBuilder,
+      (
+        OperatingCost,
+        BaseReferences<_$AppDatabase, $OperatingCostsTable, OperatingCost>,
+      ),
+      OperatingCost,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -6194,4 +7287,6 @@ class $AppDatabaseManager {
       $$LocalDevicesTableTableManager(_db, _db.localDevices);
   $$DictEntriesTableTableManager get dictEntries =>
       $$DictEntriesTableTableManager(_db, _db.dictEntries);
+  $$OperatingCostsTableTableManager get operatingCosts =>
+      $$OperatingCostsTableTableManager(_db, _db.operatingCosts);
 }

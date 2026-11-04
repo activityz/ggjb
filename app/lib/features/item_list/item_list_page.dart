@@ -1,4 +1,4 @@
-﻿import 'dart:typed_data';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -8,6 +8,7 @@ import '../../app/palette.dart';
 import '../../app/providers.dart';
 import '../../app/theme.dart';
 import '../../data/dao/item_dao.dart';
+import '../../domain/date_period.dart';
 import '../../domain/enums.dart';
 import '../../domain/money.dart';
 import '../../ui/glass_card.dart';
@@ -18,7 +19,10 @@ import '../item_edit/item_edit_page.dart';
 
 /// 明细列表：搜索 + 状态筛选 + 单件盈亏。
 class ItemListPage extends ConsumerStatefulWidget {
-  const ItemListPage({super.key});
+  const ItemListPage({super.key, this.initialFilter});
+
+  /// 从看板点卡片进来时带上的筛选。null = 空白筛选（底部 tab 里的默认页）。
+  final ItemFilter? initialFilter;
 
   @override
   ConsumerState<ItemListPage> createState() => _ItemListPageState();
@@ -28,7 +32,19 @@ class _ItemListPageState extends ConsumerState<ItemListPage> {
   final _searchController = TextEditingController();
   String _keyword = '';
   bool _burst = false;
-  ItemStatus? _status;
+
+  /// 当前状态筛选；空集 = 全部。
+  ///
+  /// 用集合而不是单值：看板上的「已卖出」「未卖」各对应两个状态
+  /// （已卖出 + 已到账 / 在库 + 挂出），点进来必须能一次看全。
+  Set<ItemStatus> _statuses = const <ItemStatus>{};
+
+  /// 日期筛选：字段（买入 / 卖出）+ 自定义区间。
+  ///
+  /// 区间两端都可以只填一头，全空就是不筛。`_dateField` 单独为 null 时
+  /// 也不筛 —— 两个必须成对，见 `ItemFilter.hasDateFilter`。
+  DateField? _dateField;
+  DateRange _range = DateRange.all;
 
   /// 入场动效只播一次。
   ///
@@ -40,6 +56,16 @@ class _ItemListPageState extends ConsumerState<ItemListPage> {
   @override
   void initState() {
     super.initState();
+    final init = widget.initialFilter;
+    if (init != null) {
+      _statuses = init.statuses?.isNotEmpty == true
+          ? init.statuses!
+          : (init.status != null ? {init.status!} : const <ItemStatus>{});
+      _keyword = init.keyword;
+      _dateField = init.dateField;
+      _range = init.range;
+      if (init.keyword.isNotEmpty) _searchController.text = init.keyword;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       Future<void>.delayed(const Duration(milliseconds: 700), () {
@@ -60,7 +86,12 @@ class _ItemListPageState extends ConsumerState<ItemListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final filter = ItemFilter(status: _status, keyword: _keyword);
+    final filter = ItemFilter(
+      statuses: _statuses,
+      keyword: _keyword,
+      dateField: _dateField,
+      range: _range,
+    );
     final async = ref.watch(itemListProvider(filter));
 
     return Scaffold(
@@ -70,92 +101,129 @@ class _ItemListPageState extends ConsumerState<ItemListPage> {
             child: DecoratedBox(
               decoration: BoxDecoration(gradient: context.palette.pageGradient),
               child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: '搜标题 / 品牌 / 型号 / 备注',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _keyword.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _keyword = '');
-                        },
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: '搜标题 / 品牌 / 型号 / 备注',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _keyword.isEmpty
+                            ? null
+                            : IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _keyword = '');
+                                },
+                              ),
                       ),
-              ),
-              onChanged: (v) => setState(() => _keyword = v.trim()),
-            ),
-          ),
-          SizedBox(
-            height: 52,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              children: [
-                _statusChip(null, '全部'),
-                for (final s in ItemStatus.values) _statusChip(s, s.label),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: async.when(
-              loading: () => const ItemListSkeleton(),
-              error: (err, _) => Center(child: Text('读取失败：$err')),
-              data: (rows) {
-                if (rows.isEmpty) {
-                  return _EmptyList(hasFilter: _status != null || _keyword.isNotEmpty);
-                }
-                return RefreshIndicator(
-                  color: context.palette.accent,
-                  backgroundColor: const Color(0xFF1A212B),
-                  displacement: 32,
-                  onRefresh: _onRefresh,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
-                    itemCount: rows.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, i) {
-                      final tile = _ItemTile(
-                        row: rows[i],
-                        onTap: () => _openDetail(context, rows[i].item.id),
-                        onDelete: () => _confirmDelete(rows[i]),
-                      );
-                      if (_introPlayed) return tile;
-                      return tile
-                          .animate()
-                          .fadeIn(
-                            duration: 380.ms,
-                            delay: (i.clamp(0, 8) * 45).ms,
-                            curve: Curves.easeOut,
-                          )
-                          .slideY(
-                            begin: 0.10,
-                            duration: 440.ms,
-                            delay: (i.clamp(0, 8) * 45).ms,
-                            curve: Curves.easeOutCubic,
-                          );
-                    },
+                      onChanged: (v) => setState(() => _keyword = v.trim()),
+                    ),
                   ),
-                );
-              },
+                  _FilterRow(
+                    field: _dateField,
+                    range: _range,
+                    onPickDate: _pickDateFilter,
+                    onClearDate: () => setState(() {
+                      _dateField = null;
+                      _range = DateRange.all;
+                    }),
+                  ),
+                  SizedBox(
+                    height: 52,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      children: [
+                        // 多状态组合（看板点进来）没有对应的单值 chip，
+                        // 单独给一颗可删的标签，点 × 回到「全部」。
+                        if (_statuses.length > 1)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: InputChip(
+                              label: Text(
+                                _statuses.map((s) => s.label).join(' + '),
+                              ),
+                              onDeleted: () => setState(
+                                () => _statuses = const <ItemStatus>{},
+                              ),
+                              deleteIcon: const Icon(Icons.close, size: 16),
+                            ),
+                          ),
+                        _statusChip(null, '全部'),
+                        for (final s in ItemStatus.values)
+                          _statusChip(s, s.label),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: async.when(
+                      loading: () => const ItemListSkeleton(),
+                      error: (err, _) => Center(child: Text('读取失败：$err')),
+                      data: (rows) {
+                        if (rows.isEmpty) {
+                          return _EmptyList(
+                            hasFilter:
+                                _statuses.isNotEmpty ||
+                                _keyword.isNotEmpty ||
+                                (_dateField != null && !_range.isEmpty),
+                          );
+                        }
+                        return RefreshIndicator(
+                          color: context.palette.accent,
+                          backgroundColor: const Color(0xFF1A212B),
+                          displacement: 32,
+                          onRefresh: _onRefresh,
+                          child: ListView.separated(
+                            padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+                            itemCount: rows.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 8),
+                            itemBuilder: (context, i) {
+                              final tile = _ItemTile(
+                                row: rows[i],
+                                onTap: () =>
+                                    _openDetail(context, rows[i].item.id),
+                                onDelete: () => _confirmDelete(rows[i]),
+                              );
+                              if (_introPlayed) return tile;
+                              return tile
+                                  .animate()
+                                  .fadeIn(
+                                    duration: 380.ms,
+                                    delay: (i.clamp(0, 8) * 45).ms,
+                                    curve: Curves.easeOut,
+                                  )
+                                  .slideY(
+                                    begin: 0.10,
+                                    duration: 440.ms,
+                                    delay: (i.clamp(0, 8) * 45).ms,
+                                    curve: Curves.easeOutCubic,
+                                  );
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          ],
-        ),
-      ),
-      ),
-      if (_burst)
-              Positioned.fill(
-                child: IgnorePointer(child: ParticleBurst(color: context.palette.accent)),
+          if (_burst)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ParticleBurst(color: context.palette.accent),
               ),
-          ],
-        ),
+            ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openEditor(context, null),
         icon: const Icon(Icons.add),
@@ -167,7 +235,12 @@ class _ItemListPageState extends ConsumerState<ItemListPage> {
   /// 下拉刷新：数据本身是流、已经实时，这里刷的是「重算一遍再炸一下」。
   /// 真要它有用，是靠 invalidate 把 summary / 分组统计也一起重取。
   Future<void> _onRefresh() async {
-    final filter = ItemFilter(status: _status, keyword: _keyword);
+    final filter = ItemFilter(
+      statuses: _statuses,
+      keyword: _keyword,
+      dateField: _dateField,
+      range: _range,
+    );
     ref.invalidate(itemListProvider(filter));
     ref.invalidate(profitSummaryProvider);
     if (mounted) setState(() => _burst = true);
@@ -175,13 +248,156 @@ class _ItemListPageState extends ConsumerState<ItemListPage> {
     if (mounted) setState(() => _burst = false);
   }
 
-  Widget _statusChip(ItemStatus? status, String label) {    final selected = _status == status;
+  /// 选「按哪一天筛」+ 一段时间。
+  ///
+  /// 分两段而不是一个弹窗塞完：日历一旦展开就盖住整屏，快捷入口和一整年的
+  /// 滚动条会互相挤。常用区间给一排快捷入口，剩下的交给系统日期区间选择器。
+  Future<void> _pickDateFilter() async {
+    var field = _dateField ?? DateField.sell;
+    final now = DateTime.now();
+
+    final picked =
+        await showModalBottomSheet<({DateField field, DateRange? range})>(
+          context: context,
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          builder: (ctx) => StatefulBuilder(
+            builder: (ctx, setLocal) => SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '按哪一天筛？',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '先定用哪个日期，再选一段时间。选完还能改。',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final f in DateField.values)
+                          ChoiceChip(
+                            label: Text(f.label),
+                            selected: field == f,
+                            onSelected: (_) => setLocal(() => field = f),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      '时间段',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ActionChip(
+                          label: const Text('本月'),
+                          onPressed: () => Navigator.of(ctx).pop((
+                            field: field,
+                            range: DateRange.thisMonth(now),
+                          )),
+                        ),
+                        ActionChip(
+                          label: const Text('上月'),
+                          onPressed: () => Navigator.of(ctx).pop((
+                            field: field,
+                            range: DateRange.lastMonth(now),
+                          )),
+                        ),
+                        ActionChip(
+                          label: const Text('最近 7 天'),
+                          onPressed: () => Navigator.of(ctx).pop((
+                            field: field,
+                            range: DateRange.lastDays(now, 7),
+                          )),
+                        ),
+                        ActionChip(
+                          label: const Text('今年'),
+                          onPressed: () => Navigator.of(
+                            ctx,
+                          ).pop((field: field, range: DateRange.thisYear(now))),
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.date_range, size: 16),
+                          label: const Text('自定义…'),
+                          onPressed: () => Navigator.of(
+                            ctx,
+                          ).pop((field: field, range: null)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+    if (picked == null || !mounted) return;
+
+    final DateRange applied;
+    if (picked.range != null) {
+      applied = picked.range!;
+    } else {
+      final start = _range.from ?? now;
+      final end = _range.to ?? now;
+      final initial = end.isBefore(start)
+          ? null
+          : DateTimeRange(start: start, end: end);
+      final custom = await showDateRangePicker(
+        context: context,
+        firstDate: DateTime(2000),
+        lastDate: DateTime(2100),
+        initialDateRange: initial,
+        helpText: '选一段时间（含首尾两天）',
+        saveText: '就这段',
+      );
+      if (custom == null || !mounted) return;
+      applied = DateRange(from: custom.start, to: custom.end);
+    }
+
+    setState(() {
+      _dateField = picked.field;
+      _range = applied;
+    });
+  }
+
+  Widget _statusChip(ItemStatus? status, String label) {
+    // 单值 chip 的选中态：空集时「全部」亮；恰好一个状态且相等时那颗亮。
+    // 多状态组合时谁都不亮，靠上面的组合标签表达。
+    final selected = status == null
+        ? _statuses.isEmpty
+        : _statuses.length == 1 && _statuses.contains(status);
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: FilterChip(
         label: Text(label),
         selected: selected,
-        onSelected: (_) => setState(() => _status = selected ? null : status),
+        onSelected: (_) => setState(() {
+          _statuses = selected || status == null
+              ? const <ItemStatus>{}
+              : <ItemStatus>{status};
+        }),
       ),
     );
   }
@@ -230,14 +446,14 @@ class _ItemListPageState extends ConsumerState<ItemListPage> {
       await ref.read(itemRepositoryProvider).delete(row.item.id);
       if (!mounted) return;
       _reload();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已删除「${row.item.title}」')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('已删除「${row.item.title}」')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('删除失败：$e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('删除失败：$e')));
     }
   }
 }
@@ -326,6 +542,10 @@ class _ItemTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
+                    if (line.isTradeIn) ...[
+                      const _TradeInBadge(),
+                      const SizedBox(width: 6),
+                    ],
                     _StatusBadge(status: item.status),
                   ],
                 ),
@@ -341,7 +561,10 @@ class _ItemTile extends StatelessWidget {
                   ].join(' · '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: context.palette.textSecondary),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.palette.textSecondary,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -359,6 +582,19 @@ class _ItemTile extends StatelessWidget {
                           : Money(item.sellPriceCents!).toYuanString(),
                       color: scheme.onSurfaceVariant,
                     ),
+                    // 抵扣单独成段：它不是卖价的一部分，塞进「卖」会被读成
+                    // 「这台卖了 ¥2,300，其中 ¥800 是旧机」，账就乱了。
+                    if (line.isTradeIn) ...[
+                      const SizedBox(width: 12),
+                      Text(
+                        '抵 ${Money(line.tradeInCents).toYuanString()}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: context.palette.accent,
+                          fontFeatures: kTabularFigures,
+                        ),
+                      ),
+                    ],
                     const Spacer(),
                     if (profit != null)
                       Text(
@@ -442,6 +678,34 @@ class _Thumb extends StatelessWidget {
   }
 }
 
+/// 置换徽章：这台是「以旧换新」成交的。
+///
+/// 用 accent 而不是状态色 —— 它和「已卖出 / 已到账」不是同一个维度，
+/// 混进状态色里会被读成又一种状态。
+class _TradeInBadge extends StatelessWidget {
+  const _TradeInBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = context.palette.accent;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '置换',
+        style: TextStyle(
+          fontSize: 11,
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
 class _StatusBadge extends StatelessWidget {
   const _StatusBadge({required this.status});
 
@@ -469,14 +733,22 @@ class _StatusBadge extends StatelessWidget {
       ),
       child: Text(
         status.label,
-        style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600),
+        style: TextStyle(
+          fontSize: 11,
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
 }
 
 class _PriceTag extends StatelessWidget {
-  const _PriceTag({required this.label, required this.text, required this.color});
+  const _PriceTag({
+    required this.label,
+    required this.text,
+    required this.color,
+  });
 
   final String label;
   final String text;
@@ -498,6 +770,56 @@ class _PriceTag extends StatelessWidget {
   }
 }
 
+/// 筛选条：只按日期（字段 + 区间）。
+///
+/// 分类不再是筛子 —— 翻账时要问的是「这段时间卖出了什么」，
+/// 而不是「这个分类卖出了什么」。分类仍然长在商品上：编辑页能填、
+/// 统计页能分组、导表带得出，只是不进筛选条。
+class _FilterRow extends StatelessWidget {
+  const _FilterRow({
+    required this.field,
+    required this.range,
+    required this.onPickDate,
+    required this.onClearDate,
+  });
+
+  final DateField? field;
+  final DateRange range;
+  final VoidCallback onPickDate;
+  final VoidCallback onClearDate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Row(
+        children: [
+          if (field != null && !range.isEmpty)
+            Expanded(
+              child: InputChip(
+                avatar: const Icon(Icons.event_outlined, size: 16),
+                label: Text(
+                  '${field!.label} · ${range.label}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onPressed: onPickDate,
+                onDeleted: onClearDate,
+                deleteIcon: const Icon(Icons.close, size: 16),
+              ),
+            )
+          else
+            ActionChip(
+              avatar: const Icon(Icons.event_outlined, size: 16),
+              label: const Text('按日期筛选'),
+              onPressed: onPickDate,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _EmptyList extends StatelessWidget {
   const _EmptyList({required this.hasFilter});
 
@@ -513,7 +835,9 @@ class _EmptyList extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              hasFilter ? Icons.filter_alt_off_outlined : Icons.inventory_2_outlined,
+              hasFilter
+                  ? Icons.filter_alt_off_outlined
+                  : Icons.inventory_2_outlined,
               size: 48,
               color: scheme.outline,
             ),

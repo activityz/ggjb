@@ -57,7 +57,14 @@ class MergeService {
 
   /// 合并范围。`dict_entries` 也参与同步，否则换了设备品牌/机型要重配一遍。
   /// 字典的变化不进 [MergeReport] 计数 —— 用户关心的是商品记录有没有过来。
-  static const _tables = ['items', 'expenses', 'attachments', 'dict_entries'];
+  /// v5 起 `operating_costs` 一并同步，否则换设备运营成本就丢了。
+  static const _tables = [
+    'items',
+    'expenses',
+    'attachments',
+    'dict_entries',
+    'operating_costs',
+  ];
 
   Future<MergeReport> mergeFromFile(String path) async {
     final file = File(path);
@@ -76,6 +83,12 @@ class MergeService {
       try {
         final before = await _totalChanges();
 
+        // 统计用的本地 id 快照必须合并前取：合并之后远端独有行已经插进来了，
+        // 差集恒空，所有行都会被算成「覆盖」，inserted 永远 0。
+        final localIdsBefore = <String, Set<String>>{
+          for (final table in _tables) table: await _localIds(table),
+        };
+
         await _db.transaction(() async {
           for (final table in _tables) {
             await _mergeTable(table);
@@ -86,9 +99,15 @@ class MergeService {
         final delta = after - before;
 
         // 逐表统计，供 UI 展示。
-        final items = await _tableDelta('items');
-        final expenses = await _tableDelta('expenses');
-        final attachments = await _tableDelta('attachments');
+        final items = await _tableDelta('items', localIdsBefore['items']!);
+        final expenses = await _tableDelta(
+          'expenses',
+          localIdsBefore['expenses']!,
+        );
+        final attachments = await _tableDelta(
+          'attachments',
+          localIdsBefore['attachments']!,
+        );
 
         // 关键：drift 的 stream 查询只在它自己知道「表动过」时才重查。
         // 上面整段合并走的是原始 SQL（ATTACH + DELETE/INSERT ... SELECT），
@@ -99,13 +118,11 @@ class MergeService {
           _db.expenses,
           _db.attachments,
           _db.dictEntries,
+          _db.operatingCosts,
         ]);
 
         // delta 只用来兜底断言，避免统计口径漂移时静默成功。
-        assert(
-          delta >= 0,
-          '合并期间总变更数不可能为负（实际 $delta）',
-        );
+        assert(delta >= 0, '合并期间总变更数不可能为负（实际 $delta）');
 
         return MergeReport(
           itemsInserted: items.inserted,
@@ -139,14 +156,19 @@ class MergeService {
     );
   }
 
-  Future<({int inserted, int replaced})> _tableDelta(String table) async {
-    // 用远端行数拆出「新增」与「覆盖」：本地原有 id 数是已知的。
-    final localIds = await _db
-        .customSelect('SELECT id FROM $table')
-        .get()
-        .then((rows) => rows.map((r) => r.data['id'] as String).toSet());
+  Future<Set<String>> _localIds(String table) => _db
+      .customSelect('SELECT id FROM $table')
+      .get()
+      .then((rows) => rows.map((r) => r.data['id'] as String).toSet());
 
-    final remoteRows = await _db.customSelect('SELECT id FROM incoming.$table').get();
+  /// [localIds] 必须是合并前的快照，见调用处的说明。
+  Future<({int inserted, int replaced})> _tableDelta(
+    String table,
+    Set<String> localIds,
+  ) async {
+    final remoteRows = await _db
+        .customSelect('SELECT id FROM incoming.$table')
+        .get();
     var inserted = 0;
     var replaced = 0;
     for (final row in remoteRows) {
@@ -162,7 +184,9 @@ class MergeService {
   }
 
   Future<int> _totalChanges() async {
-    final row = await _db.customSelect('SELECT total_changes() AS c').getSingle();
+    final row = await _db
+        .customSelect('SELECT total_changes() AS c')
+        .getSingle();
     return (row.data['c'] as int?) ?? 0;
   }
 
@@ -192,7 +216,9 @@ class MergeService {
   }
 
   Future<List<String>> _columns(String schema, String table) async {
-    final rows = await _db.customSelect('PRAGMA $schema.table_info($table)').get();
+    final rows = await _db
+        .customSelect('PRAGMA $schema.table_info($table)')
+        .get();
     return rows.map((r) => r.data['name'] as String).toList();
   }
 }

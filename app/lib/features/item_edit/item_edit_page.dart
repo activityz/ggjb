@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -36,6 +36,13 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
   final _conditionBought = TextEditingController();
   final _conditionSold = TextEditingController();
   final _note = TextEditingController();
+
+  /// 电池健康百分比（0–100）。
+  final _batteryHealth = TextEditingController();
+
+  /// 置换场景：挂牌价与旧机抵扣。利润仍然只看 `_sellPrice`（实收）。
+  final _listPrice = TextEditingController();
+  final _tradeIn = TextEditingController();
 
   final _expenses = <_ExpenseEditRow>[];
 
@@ -80,6 +87,13 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
       _conditionBought.text = item.conditionBought ?? '';
       _conditionSold.text = item.conditionSold ?? '';
       _note.text = item.note ?? '';
+      _batteryHealth.text =
+          item.batteryHealth == null ? '' : item.batteryHealth.toString();
+      _listPrice.text = item.listPriceCents == null
+          ? ''
+          : Money(item.listPriceCents!).toPlainString();
+      _tradeIn.text =
+          item.tradeInCents == null ? '' : Money(item.tradeInCents!).toPlainString();
       _status = item.status;
       _buyDate = item.buyDate;
       _sellDate = item.sellDate;
@@ -132,6 +146,9 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
       _conditionBought,
       _conditionSold,
       _note,
+      _batteryHealth,
+      _listPrice,
+      _tradeIn,
     ]) {
       c.dispose();
     }
@@ -256,6 +273,12 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
             kind: DictSeeds.kindCondition,
             hint: '95新 / 有划痕…',
           ),
+          _field(
+            controller: _batteryHealth,
+            label: '电池健康（%）',
+            hint: '例：88，不填就空着',
+            keyboardType: TextInputType.number,
+          ),
 
           const SizedBox(height: 8),
           _section('卖出情况'),
@@ -290,6 +313,19 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
                   Expanded(child: _dateField('卖出日期', _sellDate, _pickSellDate)),
               ],
             ),
+            if (_status.isRealized)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  '置换（挂牌价、旧机抵扣）在详情页「标记已卖出」里填，'
+                  '这里只管商品本身的资料。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             if (_status == ItemStatus.sold) ...[
               const SizedBox(height: 12),
               DictField(
@@ -312,7 +348,7 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                '运费、手续费、维修、包装费都记这里，会从毛利里扣。',
+                '运费、手续费、维修、包装费都记这里，会从利润里扣。',
                 style: TextStyle(
                   fontSize: 12,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -519,6 +555,25 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
       return;
     }
 
+    // 电池健康：空 = 不填；不是 0–100 的整数就拦下来，不静默截断。
+    final batteryText = _batteryHealth.text.trim();
+    int? battery;
+    if (batteryText.isNotEmpty) {
+      battery = int.tryParse(batteryText);
+      if (battery == null || battery < 0 || battery > 100) {
+        _toast('电池健康填 0–100 的整数');
+        return;
+      }
+    }
+
+    // 置换（挂牌价 / 旧机抵扣）只在详情页「标记已卖出」弹窗里改。
+    // 这里仍然把库里原值读出来原样写回去 —— save() 是整行覆盖，
+    // 不带上就等于「只改了一下标题，置换记录被抹掉」。
+    final listText = _listPrice.text.trim();
+    final tradeText = _tradeIn.text.trim();
+    final listPrice = listText.isEmpty ? null : Money.tryParseYuan(listText);
+    final tradeIn = tradeText.isEmpty ? null : Money.tryParseYuan(tradeText);
+
     final expenseDrafts = <ExpenseDraft>[];
     for (var i = 0; i < _expenses.length; i++) {
       final row = _expenses[i];
@@ -567,6 +622,9 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
           sellPriceCents: needsSellPrice ? (sell?.cents) : null,
           sellPlatform: _emptyToNull(_sellPlatform.text),
           note: _emptyToNull(_note.text),
+          batteryHealth: battery,
+          listPriceCents: listPrice?.cents,
+          tradeInCents: tradeIn?.cents,
         ),
         expenseDrafts,
       );

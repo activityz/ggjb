@@ -83,9 +83,9 @@ class ExcelImportService {
     required AppDatabase db,
     required ItemRepository repository,
     Uuid uuid = const Uuid(),
-  })  : _db = db,
-        _repo = repository,
-        _uuid = uuid;
+  }) : _db = db,
+       _repo = repository,
+       _uuid = uuid;
 
   final AppDatabase _db;
   final ItemRepository _repo;
@@ -115,8 +115,10 @@ class ExcelImportService {
     }
 
     final itemIndex = _headerIndex(itemSheet, ExcelSchema.itemHeaders);
-    final titleColumn = itemIndex[ExcelSchema.title];
-    if (titleColumn == null) {
+    // _headerIndex 对缺失列填的是 -1（不是 null），判断得看哨兵，
+    // 否则这个「表头缺名称列」的分支永远走不到。
+    final titleColumn = itemIndex[ExcelSchema.title] ?? -1;
+    if (titleColumn < 0) {
       return ExcelPreview(
         items: const [],
         expenses: const {},
@@ -144,85 +146,129 @@ class ExcelImportService {
 
       final title = _cell(row, itemIndex[ExcelSchema.title]).trim();
       if (title.isEmpty) {
-        errors.add(ExcelRowError(
-          sheet: ExcelSchema.sheetItems,
-          row: excelRow,
-          message: '「${ExcelSchema.title}」不能为空',
-        ));
+        errors.add(
+          ExcelRowError(
+            sheet: ExcelSchema.sheetItems,
+            row: excelRow,
+            message: '「${ExcelSchema.title}」不能为空',
+          ),
+        );
         continue;
       }
 
       final rawId = _cell(row, itemIndex[ExcelSchema.id]).trim();
       final id = rawId.isEmpty ? _uuid.v4() : rawId;
       if (!seenIds.add(id)) {
-        errors.add(ExcelRowError(
-          sheet: ExcelSchema.sheetItems,
-          row: excelRow,
-          message: 'id「$id」在表里出现了两次',
-        ));
+        errors.add(
+          ExcelRowError(
+            sheet: ExcelSchema.sheetItems,
+            row: excelRow,
+            message: 'id「$id」在表里出现了两次',
+          ),
+        );
       }
       idByRow[excelRow] = id;
 
-      final buyCents =
-          _parseCents(_cell(row, itemIndex[ExcelSchema.buyPrice]), errors,
-              excelRow, ExcelSchema.buyPrice);
+      final buyCents = _parseCents(
+        _cell(row, itemIndex[ExcelSchema.buyPrice]),
+        errors,
+        excelRow,
+        ExcelSchema.buyPrice,
+      );
       final sellCents = _parseCentsOrNull(
-          _cell(row, itemIndex[ExcelSchema.sellPrice]), errors, excelRow,
-          ExcelSchema.sellPrice);
+        _cell(row, itemIndex[ExcelSchema.sellPrice]),
+        errors,
+        excelRow,
+        ExcelSchema.sellPrice,
+      );
 
       final rawStatus = _cell(row, itemIndex[ExcelSchema.status]).trim();
       final status = rawStatus.isEmpty
           ? ItemStatus.inStock
           : ExcelSchema.statusFromLabel(rawStatus);
       if (status == null) {
-        errors.add(ExcelRowError(
-          sheet: ExcelSchema.sheetItems,
-          row: excelRow,
-          message: '状态「$rawStatus」不认识（可用：'
-              '${ItemStatus.values.map((e) => e.label).join(' / ')}）',
-        ));
+        errors.add(
+          ExcelRowError(
+            sheet: ExcelSchema.sheetItems,
+            row: excelRow,
+            message:
+                '状态「$rawStatus」不认识（可用：'
+                '${ItemStatus.values.map((e) => e.label).join(' / ')}）',
+          ),
+        );
         continue;
       }
 
       if (status.isRealized && sellCents == null) {
-        errors.add(ExcelRowError(
-          sheet: ExcelSchema.sheetItems,
-          row: excelRow,
-          message: '状态是「${status.label}」，但没有填「${ExcelSchema.sellPrice}」',
-        ));
+        errors.add(
+          ExcelRowError(
+            sheet: ExcelSchema.sheetItems,
+            row: excelRow,
+            message: '状态是「${status.label}」，但没有填「${ExcelSchema.sellPrice}」',
+          ),
+        );
       }
 
       final buyDate = _parseDate(
-          _cell(row, itemIndex[ExcelSchema.buyDate]), errors, excelRow,
-          ExcelSchema.buyDate);
+        _cell(row, itemIndex[ExcelSchema.buyDate]),
+        errors,
+        excelRow,
+        ExcelSchema.buyDate,
+      );
       final sellDate = _parseDate(
-          _cell(row, itemIndex[ExcelSchema.sellDate]), errors, excelRow,
-          ExcelSchema.sellDate);
+        _cell(row, itemIndex[ExcelSchema.sellDate]),
+        errors,
+        excelRow,
+        ExcelSchema.sellDate,
+      );
 
-      drafts.add(ItemDraft(
-        id: id,
-        title: title,
-        category: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.category])),
-        brand: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.brand])),
-        model: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.model])),
-        storage: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.storage])),
-        color: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.color])),
-        conditionBought:
-            _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.conditionBought])),
-        conditionSold:
-            _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.conditionSold])),
-        status: status,
-        sourcePlatform:
-            _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.sourcePlatform])),
-        buyDate: buyDate,
-        buyPriceCents: buyCents,
-        sellDate: sellDate,
-        sellPriceCents: sellCents,
-        sellPlatform:
-            _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.sellPlatform])),
-        lotId: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.lotId])),
-        note: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.note])),
-      ));
+      drafts.add(
+        ItemDraft(
+          id: id,
+          title: title,
+          category: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.category])),
+          brand: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.brand])),
+          model: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.model])),
+          storage: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.storage])),
+          color: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.color])),
+          conditionBought: _nullIfEmpty(
+            _cell(row, itemIndex[ExcelSchema.conditionBought]),
+          ),
+          conditionSold: _nullIfEmpty(
+            _cell(row, itemIndex[ExcelSchema.conditionSold]),
+          ),
+          batteryHealth: _parsePercentOrNull(
+            _cell(row, itemIndex[ExcelSchema.batteryHealth]),
+            errors,
+            excelRow,
+          ),
+          listPriceCents: _parseCentsOrNull(
+            _cell(row, itemIndex[ExcelSchema.listPrice]),
+            errors,
+            excelRow,
+            ExcelSchema.listPrice,
+          ),
+          tradeInCents: _parseCentsOrNull(
+            _cell(row, itemIndex[ExcelSchema.tradeIn]),
+            errors,
+            excelRow,
+            ExcelSchema.tradeIn,
+          ),
+          status: status,
+          sourcePlatform: _nullIfEmpty(
+            _cell(row, itemIndex[ExcelSchema.sourcePlatform]),
+          ),
+          buyDate: buyDate,
+          buyPriceCents: buyCents,
+          sellDate: sellDate,
+          sellPriceCents: sellCents,
+          sellPlatform: _nullIfEmpty(
+            _cell(row, itemIndex[ExcelSchema.sellPlatform]),
+          ),
+          lotId: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.lotId])),
+          note: _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.note])),
+        ),
+      );
 
       // rawId 为空的行用一个占位 key，等费用表解析完再换成真 id。
       if (rawId.isEmpty && !existingIds.contains(id)) {
@@ -236,11 +282,7 @@ class ExcelImportService {
       knownIds: {...existingIds, ...drafts.map((d) => d.id!)},
     );
 
-    return ExcelPreview(
-      items: drafts,
-      expenses: expenses,
-      errors: errors,
-    );
+    return ExcelPreview(items: drafts, expenses: expenses, errors: errors);
   }
 
   /// 写库。必须先 [parse] 且 `preview.ok` 为真。
@@ -278,7 +320,9 @@ class ExcelImportService {
       return const {};
     }
 
+    final idColumn = index[ExcelSchema.expenseId];
     final result = <String, List<ExpenseDraft>>{};
+    final seenIds = <String>{};
     final rows = sheet.rows;
     for (var r = 1; r < rows.length; r++) {
       final row = rows[r];
@@ -287,19 +331,36 @@ class ExcelImportService {
 
       final itemId = _cell(row, itemIdColumn).trim();
       if (itemId.isEmpty) {
-        errors.add(ExcelRowError(
-          sheet: ExcelSchema.sheetExpenses,
-          row: excelRow,
-          message: '「${ExcelSchema.expenseItemId}」不能为空',
-        ));
+        errors.add(
+          ExcelRowError(
+            sheet: ExcelSchema.sheetExpenses,
+            row: excelRow,
+            message: '「${ExcelSchema.expenseItemId}」不能为空',
+          ),
+        );
         continue;
       }
       if (!knownIds.contains(itemId)) {
-        errors.add(ExcelRowError(
-          sheet: ExcelSchema.sheetExpenses,
-          row: excelRow,
-          message: '找不到 id 为「$itemId」的商品',
-        ));
+        errors.add(
+          ExcelRowError(
+            sheet: ExcelSchema.sheetExpenses,
+            row: excelRow,
+            message: '找不到 id 为「$itemId」的商品',
+          ),
+        );
+        continue;
+      }
+
+      // 费用自己的 id：有就原地覆盖，没有就当新行（旧导出文件都没有这一列）。
+      final rawId = _cell(row, idColumn).trim();
+      if (rawId.isNotEmpty && !seenIds.add(rawId)) {
+        errors.add(
+          ExcelRowError(
+            sheet: ExcelSchema.sheetExpenses,
+            row: excelRow,
+            message: "「${ExcelSchema.expenseId}」$rawId 重复了，一笔费用只能出现一次",
+          ),
+        );
         continue;
       }
 
@@ -308,12 +369,15 @@ class ExcelImportService {
           ? ExpenseKind.other
           : ExcelSchema.kindFromLabel(rawKind);
       if (kind == null) {
-        errors.add(ExcelRowError(
-          sheet: ExcelSchema.sheetExpenses,
-          row: excelRow,
-          message: '费用种类「$rawKind」不认识（可用：'
-              '${ExpenseKind.values.map((e) => e.label).join(' / ')}）',
-        ));
+        errors.add(
+          ExcelRowError(
+            sheet: ExcelSchema.sheetExpenses,
+            row: excelRow,
+            message:
+                '费用种类「$rawKind」不认识（可用：'
+                '${ExpenseKind.values.map((e) => e.label).join(' / ')}）',
+          ),
+        );
         continue;
       }
 
@@ -322,31 +386,44 @@ class ExcelImportService {
           ? ExpenseSide.buy
           : ExcelSchema.sideFromLabel(rawSide);
       if (side == null) {
-        errors.add(ExcelRowError(
-          sheet: ExcelSchema.sheetExpenses,
-          row: excelRow,
-          message: '侧别「$rawSide」不认识（可用：买入 / 卖出）',
-        ));
+        errors.add(
+          ExcelRowError(
+            sheet: ExcelSchema.sheetExpenses,
+            row: excelRow,
+            message: '侧别「$rawSide」不认识（可用：买入 / 卖出）',
+          ),
+        );
         continue;
       }
 
       final amount = _parseCents(
-          _cell(row, index[ExcelSchema.expenseAmount]), errors, excelRow,
-          ExcelSchema.expenseAmount,
-          sheet: ExcelSchema.sheetExpenses);
+        _cell(row, index[ExcelSchema.expenseAmount]),
+        errors,
+        excelRow,
+        ExcelSchema.expenseAmount,
+        sheet: ExcelSchema.sheetExpenses,
+      );
 
       final incurredAt = _parseDate(
-          _cell(row, index[ExcelSchema.expenseDate]), errors, excelRow,
-          ExcelSchema.expenseDate,
-          sheet: ExcelSchema.sheetExpenses);
+        _cell(row, index[ExcelSchema.expenseDate]),
+        errors,
+        excelRow,
+        ExcelSchema.expenseDate,
+        sheet: ExcelSchema.sheetExpenses,
+      );
 
-      result.putIfAbsent(itemId, () => <ExpenseDraft>[]).add(ExpenseDraft(
-            kind: kind,
-            side: side,
-            amountCents: amount,
-            incurredAt: incurredAt,
-            note: _nullIfEmpty(_cell(row, index[ExcelSchema.expenseNote])),
-          ));
+      result
+          .putIfAbsent(itemId, () => <ExpenseDraft>[])
+          .add(
+            ExpenseDraft(
+              id: rawId.isEmpty ? null : rawId,
+              kind: kind,
+              side: side,
+              amountCents: amount,
+              incurredAt: incurredAt,
+              note: _nullIfEmpty(_cell(row, index[ExcelSchema.expenseNote])),
+            ),
+          );
     }
     return result;
   }
@@ -395,14 +472,16 @@ class ExcelImportService {
       return _out.format(DateTime(value.year, value.month, value.day));
     }
     if (value is DateTimeCellValue) {
-      return _out.format(DateTime(
-        value.year,
-        value.month,
-        value.day,
-        value.hour,
-        value.minute,
-        value.second,
-      ));
+      return _out.format(
+        DateTime(
+          value.year,
+          value.month,
+          value.day,
+          value.hour,
+          value.minute,
+          value.second,
+        ),
+      );
     }
     return value.toString();
   }
@@ -440,20 +519,20 @@ class ExcelImportService {
   }) {
     final text = raw.trim();
     if (text.isEmpty) {
-      errors.add(ExcelRowError(
-        sheet: sheet,
-        row: excelRow,
-        message: '「$column」不能为空',
-      ));
+      errors.add(
+        ExcelRowError(sheet: sheet, row: excelRow, message: '「$column」不能为空'),
+      );
       return 0;
     }
     final money = Money.tryParseYuan(text);
     if (money == null) {
-      errors.add(ExcelRowError(
-        sheet: sheet,
-        row: excelRow,
-        message: '「$column」不是金额：$text',
-      ));
+      errors.add(
+        ExcelRowError(
+          sheet: sheet,
+          row: excelRow,
+          message: '「$column」不是金额：$text',
+        ),
+      );
       return 0;
     }
     return money.cents;
@@ -471,14 +550,51 @@ class ExcelImportService {
     if (text.isEmpty) return null;
     final money = Money.tryParseYuan(text);
     if (money == null) {
-      errors.add(ExcelRowError(
-        sheet: sheet,
-        row: excelRow,
-        message: '「$column」不是金额：$text',
-      ));
+      errors.add(
+        ExcelRowError(
+          sheet: sheet,
+          row: excelRow,
+          message: '「$column」不是金额：$text',
+        ),
+      );
       return null;
     }
     return money.cents;
+  }
+
+  /// 电池健康：0–100 的整数百分比。空就是空，非数字或越界算错。
+  ///
+  /// 越界不静默截断：用户手敲 120 大概率是想写别的，直接改成 100
+  /// 会让他以为系统记错了。
+  int? _parsePercentOrNull(
+    String raw,
+    List<ExcelRowError> errors,
+    int excelRow,
+  ) {
+    final text = raw.trim().replaceAll('%', '');
+    if (text.isEmpty) return null;
+    final value = int.tryParse(text);
+    if (value == null) {
+      errors.add(
+        ExcelRowError(
+          sheet: ExcelSchema.sheetItems,
+          row: excelRow,
+          message: '「${ExcelSchema.batteryHealth}」不是整数：$raw',
+        ),
+      );
+      return null;
+    }
+    if (value < 0 || value > 100) {
+      errors.add(
+        ExcelRowError(
+          sheet: ExcelSchema.sheetItems,
+          row: excelRow,
+          message: '「${ExcelSchema.batteryHealth}」要在 0–100 之间：$raw',
+        ),
+      );
+      return null;
+    }
+    return value;
   }
 
   DateTime? _parseDate(
@@ -493,11 +609,13 @@ class ExcelImportService {
     final normalized = text.replaceAll('/', '-').replaceAll('.', '-');
     final parsed = DateTime.tryParse(normalized);
     if (parsed == null) {
-      errors.add(ExcelRowError(
-        sheet: sheet,
-        row: excelRow,
-        message: '「$column」不是日期：$text（要写成 ${ExcelSchema.datePattern}）',
-      ));
+      errors.add(
+        ExcelRowError(
+          sheet: sheet,
+          row: excelRow,
+          message: '「$column」不是日期：$text（要写成 ${ExcelSchema.datePattern}）',
+        ),
+      );
       return null;
     }
     return DateTime(parsed.year, parsed.month, parsed.day);

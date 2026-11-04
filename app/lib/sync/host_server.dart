@@ -36,6 +36,10 @@ class SyncHost {
   final String _deviceName;
   final MergeService _merge;
 
+  /// 两端约定的监听端口。报错文案、配对落库的 peerPort 都从这里取，
+  /// 免得改端口时漏掉某处仍然写着 8787。
+  static const defaultPort = 8787;
+
   HttpServer? _server;
   String? _pairCode;
   final _tokens = <String>{};
@@ -47,7 +51,7 @@ class SyncHost {
   /// 当前的有效配对码；只有处于监听状态时才存在。
   String? get pairCode => _pairCode;
 
-  Future<int> start({int port = 8787}) async {
+  Future<int> start({int port = defaultPort}) async {
     if (_server != null) return _server!.port;
 
     // 重启后旧对端手里的令牌必须仍然有效，否则「下次自动同步」永远连不通。
@@ -121,8 +125,8 @@ class SyncHost {
                 peerName: Value(body['device_name']?.toString()),
                 peerToken: Value(token),
                 peerHost: Value(remoteHost),
-                // 对端监听的端口：两端都按约定用 8787（SyncHost.start 的默认值）。
-                peerPort: const Value(8787),
+                // 对端监听的端口：两端都按约定用 8787（SyncHost.defaultPort）。
+                peerPort: const Value(defaultPort),
                 pairedAt: DateTime.now(),
               ),
             );

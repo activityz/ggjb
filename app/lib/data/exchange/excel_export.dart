@@ -1,6 +1,6 @@
 /// 把整库导出成 Excel（两个 sheet：商品 / 费用明细）。
 ///
-/// 一条纪律：**毛利、总投入、费用合计、毛利率这四列必须来自
+/// 一条纪律：**利润、总投入、费用合计、利润率这四列必须来自
 /// [ProfitLine]，不能在这里重算。** 否则哪天口径变了，Excel 里还是
 /// 老算法，用户拿着表来问「为什么和 App 里不一样」。
 library;
@@ -46,13 +46,14 @@ class ExcelExportService {
 
   /// 生成 xlsx 字节。不落盘，方便单测与直接分享。
   Future<List<int>> buildBytes() async {
-    final items = await (_db.select(_db.items)
-          ..where((t) => t.deletedAt.isNull())
-          ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
-        .get();
-    final expenses = await (_db.select(_db.expenses)
-          ..where((t) => t.deletedAt.isNull()))
-        .get();
+    final items =
+        await (_db.select(_db.items)
+              ..where((t) => t.deletedAt.isNull())
+              ..orderBy([(t) => OrderingTerm.desc(t.updatedAt)]))
+            .get();
+    final expenses = await (_db.select(
+      _db.expenses,
+    )..where((t) => t.deletedAt.isNull())).get();
 
     final lines = <String, ProfitLine>{
       for (final line in await ItemDao(_db).allProfitLines()) line.itemId: line,
@@ -71,7 +72,9 @@ class ExcelExportService {
 
     excel.appendRow(
       ExcelSchema.sheetItems,
-      ExcelSchema.itemHeaders.map((h) => TextCellValue(h) as CellValue?).toList(),
+      ExcelSchema.itemHeaders
+          .map((h) => TextCellValue(h) as CellValue?)
+          .toList(),
     );
 
     for (final item in items) {
@@ -93,6 +96,9 @@ class ExcelExportService {
         _text(item.sellDate == null ? null : _date.format(item.sellDate!)),
         _text(item.sellPlatform),
         _text(item.conditionSold),
+        item.batteryHealth == null ? null : IntCellValue(item.batteryHealth!),
+        item.listPriceCents == null ? null : _money(item.listPriceCents!),
+        item.tradeInCents == null ? null : _money(item.tradeInCents!),
         // 以下四列由 ProfitLine 提供，口径与看板一致。
         _money(line?.expenseCents ?? 0),
         _money(line?.totalCostCents ?? item.buyPriceCents),
@@ -100,7 +106,8 @@ class ExcelExportService {
         line?.marginRate == null
             ? null
             : DoubleCellValue(
-                double.parse((line!.marginRate! * 100).toStringAsFixed(2))),
+                double.parse((line!.marginRate! * 100).toStringAsFixed(2)),
+              ),
         _text(item.note),
         _text(item.lotId),
       ]);
@@ -108,19 +115,22 @@ class ExcelExportService {
 
     excel.appendRow(
       ExcelSchema.sheetExpenses,
-      ExcelSchema.expenseHeaders.map((h) => TextCellValue(h) as CellValue?).toList(),
+      ExcelSchema.expenseHeaders
+          .map((h) => TextCellValue(h) as CellValue?)
+          .toList(),
     );
 
     for (final expense in expenses) {
       excel.appendRow(ExcelSchema.sheetExpenses, <CellValue?>[
+        TextCellValue(expense.id),
         TextCellValue(expense.itemId),
         _text(titleOf[expense.itemId]),
         TextCellValue(ExcelSchema.kindLabel(expense.kind)),
         TextCellValue(ExcelSchema.sideLabel(expense.side)),
         _money(expense.amountCents),
-        _text(expense.incurredAt == null
-            ? null
-            : _date.format(expense.incurredAt!)),
+        _text(
+          expense.incurredAt == null ? null : _date.format(expense.incurredAt!),
+        ),
         _text(expense.note),
       ]);
     }
@@ -150,16 +160,16 @@ class ExcelExportService {
   }
 
   Future<int> _countItems() async {
-    final rows = await (_db.select(_db.items)
-          ..where((t) => t.deletedAt.isNull()))
-        .get();
+    final rows = await (_db.select(
+      _db.items,
+    )..where((t) => t.deletedAt.isNull())).get();
     return rows.length;
   }
 
   Future<int> _countExpenses() async {
-    final rows = await (_db.select(_db.expenses)
-          ..where((t) => t.deletedAt.isNull()))
-        .get();
+    final rows = await (_db.select(
+      _db.expenses,
+    )..where((t) => t.deletedAt.isNull())).get();
     return rows.length;
   }
 

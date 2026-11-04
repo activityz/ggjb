@@ -1,4 +1,5 @@
-﻿import 'dart:async';
+import 'dart:async';
+import 'dart:io';
 
 import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery, ResultSetImplementation;
 import 'package:flutter/foundation.dart';
@@ -46,11 +47,18 @@ class SyncController extends ChangeNotifier {
   DateTime? _lastSyncAt;
   AutoSyncResult? _lastResult;
   String? _lastError;
+  String? _hostError;
 
   bool get syncing => _syncing;
   bool get hosting => _host != null;
   String? get pairCode => _host?.pairCode;
   int? get port => _host?.port;
+
+  /// 上一次开启主机监听失败的原因（端口被占、系统拒绝监听……）。
+  ///
+  /// 以前这里是 `catch (_) {}` 全静默，用户点了「开启」没任何反应，
+  /// 只能看到按钮还是「开启」，根本无从判断是被占用还是没权限。
+  String? get hostError => _hostError;
   DateTime? get lastSyncAt => _lastSyncAt;
   AutoSyncResult? get lastResult => _lastResult;
   String? get lastError => _lastError;
@@ -153,13 +161,21 @@ class SyncController extends ChangeNotifier {
     return name;
   }
 
-  /// 只要配对过就自动开门等着对方连，这样谁先开机都能同步上。
-  /// 没配对过就不占端口 —— 全新安装的用户不该看到防火墙弹窗。
-  Future<void> _ensureHost() async {
+  /// 开门等对方连过来。
+  ///
+  /// [manual] 区分「自动」和「用户点按钮」两条路：
+  /// - 自动（启动时 / 刚配对完）只在**已有对端**时才监听 —— 全新安装不该占
+  ///   8787、也不该弹系统防火墙；
+  /// - 手动点「开启」时必须无条件起监听。否则会出现一个死锁：两台全新设备
+  ///   互配，A 得先开启监听才能拿到配对码给 B 填，而 A 没有对端就永远开不了。
+  ///   没对端时 `_tokens` 是空的、`_pairCode` 照样生成，`/v1/pair` 完全可用。
+  Future<void> _ensureHost({bool manual = false}) async {
     if (_host != null) return;
     final db = _ref.read(databaseProvider);
-    final peers = await db.select(db.syncStates).get();
-    if (peers.isEmpty) return;
+    if (!manual) {
+      final peers = await db.select(db.syncStates).get();
+      if (peers.isEmpty) return;
+    }
 
     final host = SyncHost(
       db: db,
@@ -169,11 +185,31 @@ class SyncController extends ChangeNotifier {
     try {
       await host.start();
       _host = host;
+      _hostError = null;
       notifyListeners();
-    } catch (_) {
+    } catch (e) {
       // 端口被占（比如同一台机器开了两份）、或者系统不给监听权限。
-      // 这种情况下对方连不进来，但本机仍然能主动连出去，所以不报错。
+      // 这时候对方连不进来，但本机仍然能主动连出去，所以不抛给上层；
+      // 原因必须留下来，让手动开启的一方看到到底为什么失败。
+      _hostError = _describeHostError(e);
+      notifyListeners();
     }
+  }
+
+  static String _describeHostError(Object e) {
+    if (e is SocketException) {
+      final code = e.osError?.errorCode;
+      final detail = e.osError?.message ?? e.message;
+      // 10048 / 98 = 端口已被占用；10013 / 13 = 权限不足。
+      if (code == 10048 || code == 98) {
+        return '端口 ${SyncHost.defaultPort} 已被占用（可能另一份程序还在运行）';
+      }
+      if (code == 10013 || code == 13) {
+        return '系统不允许监听端口 ${SyncHost.defaultPort}（权限不足）';
+      }
+      return '监听端口 ${SyncHost.defaultPort} 失败：$detail';
+    }
+    return '开启同步主机失败：$e';
   }
 
   /// 刚配对完就调一次：这时候才第一次有对端，之前 `_ensureHost` 是空转。
@@ -181,15 +217,22 @@ class SyncController extends ChangeNotifier {
     await _ensureHost();
     notifyListeners();
   }
+
   /// 用户手动关掉/开启主机监听时用。
-  Future<void> toggleHost() async {
+  ///
+  /// 返回 `null` 表示成功，否则是给用户看的失败原因 —— 调用方必须展示出来，
+  /// 别再让「点了没反应」成为唯一反馈。
+  Future<String?> toggleHost() async {
     if (_host != null) {
       await _host!.stop();
       _host = null;
+      _hostError = null;
       notifyListeners();
-      return;
+      return null;
     }
-    await _ensureHost();
+    _hostError = null;
+    await _ensureHost(manual: true);
+    return _host == null ? (_hostError ?? '开启同步主机失败') : null;
   }
 
   @override

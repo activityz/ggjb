@@ -34,10 +34,22 @@ class ExcelSchema {
   static const String sellDate = '卖出日期';
   static const String sellPlatform = '卖出渠道';
   static const String conditionSold = '卖出成色';
+
+  /// 电池健康百分比（0–100 整数）。
+  static const String batteryHealth = '电池健康';
+
+  /// 置换时的挂牌价（原始要价）。实收写「卖出价」。
+  static const String listPrice = '挂牌价';
+
+  /// 置换时买家旧机折的价。只记录，不进利润。
+  static const String tradeIn = '旧机抵扣';
+
   static const String expenseTotal = '费用合计';
   static const String totalCost = '总投入';
-  static const String profitAmount = '毛利';
-  static const String profitRate = '毛利率';
+
+  /// 单笔利润。v4 起「毛利」改名「利润」（口径本来就一样，只是名字统一）。
+  static const String profitAmount = '利润';
+  static const String profitRate = '利润率';
   static const String note = '备注';
   static const String lotId = '批次号';
 
@@ -58,6 +70,9 @@ class ExcelSchema {
     sellDate,
     sellPlatform,
     conditionSold,
+    batteryHealth,
+    listPrice,
+    tradeIn,
     expenseTotal,
     totalCost,
     profitAmount,
@@ -80,6 +95,8 @@ class ExcelSchema {
   // -------------------------------------------------------------------
   // 费用表头
   // -------------------------------------------------------------------
+  /// 费用自己的 id。有了它，导入才能原地覆盖而不是每次都插新行。
+  static const String expenseId = '费用id';
   static const String expenseItemId = '商品id';
   static const String expenseItemTitle = '商品名称';
   static const String expenseKind = '种类';
@@ -89,6 +106,7 @@ class ExcelSchema {
   static const String expenseNote = '备注';
 
   static const List<String> expenseHeaders = <String>[
+    expenseId,
     expenseItemId,
     expenseItemTitle,
     expenseKind,

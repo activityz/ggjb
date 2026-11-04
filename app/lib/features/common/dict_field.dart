@@ -56,6 +56,11 @@ class DictField extends ConsumerWidget {
       child: TextField(
         controller: controller,
         enabled: enabled,
+        // 整框点开选择器，不做行内输入：手机上一根手指的范围里，
+        // 「点箭头」和「点空白处」实际是同一块肌肉记忆，只让 24px 的箭头响应
+        // 就是让人觉得「点不动」。想填字典里没有的值，在选择器里直接新增。
+        readOnly: true,
+        onTap: enabled ? () => _pick(context, ref) : null,
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,

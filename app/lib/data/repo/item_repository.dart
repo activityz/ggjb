@@ -1,6 +1,7 @@
-﻿import 'package:drift/drift.dart';
+import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../domain/date_period.dart';
 import '../../domain/enums.dart';
 import '../../domain/profit.dart';
 import '../dao/attachment_dao.dart';
@@ -30,6 +31,9 @@ class ItemDraft {
     this.sellPlatform,
     this.lotId,
     this.note,
+    this.batteryHealth,
+    this.listPriceCents,
+    this.tradeInCents,
   });
 
   final String? id;
@@ -54,6 +58,15 @@ class ItemDraft {
   final String? sellPlatform;
   final String? lotId;
   final String? note;
+
+  /// 电池健康百分比（0–100）。null = 没填。
+  final int? batteryHealth;
+
+  /// 置换挂牌价（分）。普通交易为 null。
+  final int? listPriceCents;
+
+  /// 置换时旧机抵扣额（分）。只记录，不参与利润。
+  final int? tradeInCents;
 }
 
 /// 草稿里的一条费用。
@@ -84,11 +97,11 @@ class ItemRepository {
     required AttachmentDao attachmentDao,
     required String deviceId,
     Uuid uuid = const Uuid(),
-  })  : _db = db,
-        _items = itemDao,
-        _attachments = attachmentDao,
-        _deviceId = deviceId,
-        _uuid = uuid;
+  }) : _db = db,
+       _items = itemDao,
+       _attachments = attachmentDao,
+       _deviceId = deviceId,
+       _uuid = uuid;
 
   final AppDatabase _db;
   final ItemDao _items;
@@ -96,17 +109,37 @@ class ItemRepository {
   final String _deviceId;
   final Uuid _uuid;
 
-  Stream<List<ItemListRow>> watchList({ItemStatus? status, String? keyword}) =>
-      _items.watchList(status: status, keyword: keyword);
+  Stream<List<ItemListRow>> watchList({
+    ItemStatus? status,
+    Set<ItemStatus>? statuses,
+    String? keyword,
+    DateField? dateField,
+    DateRange? range,
+  }) => _items.watchList(
+    status: status,
+    statuses: statuses,
+    keyword: keyword,
+    dateField: dateField,
+    range: range,
+  );
 
   Future<ItemWithExpenses?> load(String id) => _items.load(id);
 
   Future<List<AttachmentMeta>> attachmentsOf(String itemId) =>
       _attachments.listMeta(itemId);
 
-  /// 全量利润汇总，供看板使用。
-  Future<ProfitAggregate> aggregate() async {
-    final lines = await _items.allProfitLines();
+  /// 利润汇总，供看板使用。
+  ///
+  /// 不给参数就是全库口径（默认为「全部时间」）；
+  /// 给了 [dateField] / [range] 就只算筛选范围内的单子。
+  Future<ProfitAggregate> aggregate({
+    DateField? dateField,
+    DateRange? range,
+  }) async {
+    final lines = await _items.allProfitLines(
+      dateField: dateField,
+      range: range,
+    );
     return ProfitCalculator.aggregate(lines);
   }
 
@@ -135,19 +168,32 @@ class ItemRepository {
         sellPlatform: Value(draft.sellPlatform),
         lotId: Value(draft.lotId),
         note: Value(draft.note),
+        batteryHealth: Value(draft.batteryHealth),
+        listPriceCents: Value(draft.listPriceCents),
+        tradeInCents: Value(draft.tradeInCents),
         createdAt: Value(now),
         updatedAt: Value(now),
         deviceId: Value(_deviceId),
       );
 
-      if (draft.id == null) {
+      // id 非空不等于「编辑」：导表时 parse 会给新行分配 uuid，编辑页也可能
+      // 带着一个已被清空的 id 进来。只认 draft.id 会把它们全当成编辑，
+      // update 0 行后仍然报成功，用户看到「已写入 1 件」但列表里空空如也。
+      final existing = draft.id == null ? null : await _items.findById(id);
+      if (existing == null) {
         await _items.insertItem(companion);
       } else {
         // 编辑不覆盖 createdAt / deviceId（deviceId 记录最初创建者）。
+        //
+        // deletedAt 必须显式清空：导入一份「自己导出过的表」时，id 往往
+        // 正好命中本地已软删的行。只 update 不清墓碑，数据确实写进了库，
+        // 但列表按 deleted_at 过滤，用户看到「已写入 N 件」却什么都没有——
+        // 这就是「导入提示成功、实际没导入」的来源。
         await (_db.update(_db.items)..where((t) => t.id.equals(id))).write(
           companion.copyWith(
             createdAt: const Value.absent(),
             deviceId: const Value.absent(),
+            deletedAt: const Value(null),
           ),
         );
       }
@@ -167,8 +213,7 @@ class ItemRepository {
           if (e.id != null) e.id!,
       };
 
-      final stale = _db.update(_db.expenses)
-        ..where((t) => t.itemId.equals(id));
+      final stale = _db.update(_db.expenses)..where((t) => t.itemId.equals(id));
       // 空集合不能直接塞进 `isNotIn`（会生成 `NOT IN ()` 这种非法 SQL），
       // 所以有保留项时才追加这个条件。
       if (keepIds.isNotEmpty) {
@@ -180,9 +225,9 @@ class ItemRepository {
 
       for (final e in expenses) {
         final expenseId = e.id ?? _uuid.v4();
-        final exists = await (_db.select(_db.expenses)
-              ..where((t) => t.id.equals(expenseId)))
-            .getSingleOrNull();
+        final exists = await (_db.select(
+          _db.expenses,
+        )..where((t) => t.id.equals(expenseId))).getSingleOrNull();
 
         if (exists == null) {
           await _items.insertExpense(
@@ -202,9 +247,9 @@ class ItemRepository {
         } else {
           // 复活已存在的行：deleted_at 清空，其余按当前表单覆盖。
           // createdAt / deviceId 属于「谁在什么时候建的」，编辑不覆盖。
-          await (_db.update(_db.expenses)
-                ..where((t) => t.id.equals(expenseId)))
-              .write(
+          await (_db.update(
+            _db.expenses,
+          )..where((t) => t.id.equals(expenseId))).write(
             ExpensesCompanion(
               itemId: Value(id),
               kind: Value(e.kind),
@@ -224,12 +269,18 @@ class ItemRepository {
   }
 
   /// 标记为已售出。
+  ///
+  /// [listPriceCents] / [tradeInCents] 是置换留痕（挂牌价、旧机抵扣），
+  /// **不参与利润**：旧机的价值要等它作为新商品再卖出去才结算，
+  /// 现在就在这一单里扣，同一台机器会被算两次。
   Future<void> markSold(
     String itemId, {
     required int sellPriceCents,
     DateTime? sellDate,
     String? sellPlatform,
     String? conditionSold,
+    int? listPriceCents,
+    int? tradeInCents,
   }) async {
     final now = DateTime.now();
     await (_db.update(_db.items)..where((t) => t.id.equals(itemId))).write(
@@ -239,6 +290,8 @@ class ItemRepository {
         sellDate: Value(sellDate ?? now),
         sellPlatform: Value(sellPlatform),
         conditionSold: Value(conditionSold),
+        listPriceCents: Value(listPriceCents),
+        tradeInCents: Value(tradeInCents),
         updatedAt: Value(now),
       ),
     );

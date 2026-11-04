@@ -145,6 +145,29 @@ class DictDao {
     );
   }
 
+  /// 按给定顺序重写一轮排序号（0..n-1）。
+  ///
+  /// 不做「交换两项」的原因是：老数据的 sortOrder 可能全是 0
+  /// （v5 之前插入时不区分序号），交换两个 0 等于没换。整段重排一次
+  /// 就顺带把它们规范化了，之后上下移动才真的能动。
+  Future<void> reorder(List<DictEntry> ordered) async {
+    if (ordered.isEmpty) return;
+    final now = DateTime.now();
+    await _db.transaction(() async {
+      for (var i = 0; i < ordered.length; i++) {
+        final e = ordered[i];
+        if (e.sortOrder == i) continue;
+        await (_db.update(_db.dictEntries)..where((t) => t.id.equals(e.id)))
+            .write(
+          DictEntriesCompanion(
+            sortOrder: Value(i),
+            updatedAt: Value(now),
+          ),
+        );
+      }
+    });
+  }
+
   /// 软删除。写墓碑而不是物理删，否则同步时会被对端复活。
   Future<void> softDelete(String id, {required DateTime now}) async {
     await (_db.update(_db.dictEntries)..where((t) => t.id.equals(id))).write(

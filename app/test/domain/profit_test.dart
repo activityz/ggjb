@@ -8,14 +8,13 @@ ProfitLine line({
   int expense = 0,
   int? sell,
   String id = 'x',
-}) =>
-    ProfitLine(
-      itemId: id,
-      status: status,
-      buyPriceCents: buy,
-      expenseCents: expense,
-      sellPriceCents: sell,
-    );
+}) => ProfitLine(
+  itemId: id,
+  status: status,
+  buyPriceCents: buy,
+  expenseCents: expense,
+  sellPriceCents: sell,
+);
 
 void main() {
   group('单笔毛利', () {
@@ -31,19 +30,39 @@ void main() {
     });
 
     test('卖出侧与买入侧费用一视同仁', () {
-      final a = line(status: ItemStatus.sold, buy: 1000, sell: 2000, expense: 100);
-      final b = line(status: ItemStatus.sold, buy: 1000, sell: 2000, expense: 100);
+      final a = line(
+        status: ItemStatus.sold,
+        buy: 1000,
+        sell: 2000,
+        expense: 100,
+      );
+      final b = line(
+        status: ItemStatus.sold,
+        buy: 1000,
+        sell: 2000,
+        expense: 100,
+      );
       expect(a.profitCents, b.profitCents);
       expect(a.profitCents, 900);
     });
 
     test('亏损单为负数', () {
-      final l = line(status: ItemStatus.sold, buy: 100000, sell: 80000, expense: 5000);
+      final l = line(
+        status: ItemStatus.sold,
+        buy: 100000,
+        sell: 80000,
+        expense: 5000,
+      );
       expect(l.profitCents, -25000);
     });
 
     test('卖出价为 null 但状态是 sold（赠出）按 0 计，全额亏损', () {
-      final l = line(status: ItemStatus.sold, buy: 50000, sell: null, expense: 1000);
+      final l = line(
+        status: ItemStatus.sold,
+        buy: 50000,
+        sell: null,
+        expense: 1000,
+      );
       expect(l.profitCents, -51000);
     });
 
@@ -79,7 +98,12 @@ void main() {
     });
 
     test('毛利率', () {
-      final l = line(status: ItemStatus.sold, buy: 100000, sell: 150000, expense: 0);
+      final l = line(
+        status: ItemStatus.sold,
+        buy: 100000,
+        sell: 150000,
+        expense: 0,
+      );
       expect(l.marginRate, closeTo(0.5, 1e-9));
     });
 
@@ -95,7 +119,12 @@ void main() {
       final agg = ProfitCalculator.aggregate([
         line(id: '1', status: ItemStatus.sold, buy: 1000, sell: 1500), // +500
         line(id: '2', status: ItemStatus.sold, buy: 2000, sell: 2600), // +600
-        line(id: '3', status: ItemStatus.returned, buy: 3000, expense: 100), // -3100
+        line(
+          id: '3',
+          status: ItemStatus.returned,
+          buy: 3000,
+          expense: 100,
+        ), // -3100
         line(id: '4', status: ItemStatus.scrapped, buy: 500), // -500
         line(id: '5', status: ItemStatus.inStock, buy: 8000), // 占用
         line(id: '6', status: ItemStatus.listed, buy: 4000, expense: 200), // 占用
@@ -118,7 +147,10 @@ void main() {
         line(id: '2', status: ItemStatus.inStock, buy: 999999),
       ]);
       expect(agg.realizedCostCents, 1000);
-      expect(agg.summary.realizedMarginRate(agg.realizedCostCents), closeTo(0.5, 1e-9));
+      expect(
+        agg.summary.realizedMarginRate(agg.realizedCostCents),
+        closeTo(0.5, 1e-9),
+      );
     });
 
     test('平均每笔已实现毛利', () {
@@ -165,8 +197,18 @@ void main() {
 
     test('completed 也计入已实现利润，但不再构成待收货款', () {
       final agg = ProfitCalculator.aggregate([
-        line(id: '1', status: ItemStatus.sold, buy: 1000, sell: 1500), // +500，待收 1500
-        line(id: '2', status: ItemStatus.completed, buy: 2000, sell: 2600), // +600，已到账
+        line(
+          id: '1',
+          status: ItemStatus.sold,
+          buy: 1000,
+          sell: 1500,
+        ), // +500，待收 1500
+        line(
+          id: '2',
+          status: ItemStatus.completed,
+          buy: 2000,
+          sell: 2600,
+        ), // +600，已到账
       ]);
       expect(agg.summary.realizedProfitCents, 1100);
       expect(agg.summary.soldCount, 2);
@@ -212,6 +254,26 @@ void main() {
       for (final s in ItemStatus.values) {
         expect(s.isRealized, s == ItemStatus.sold || s == ItemStatus.completed);
       }
+    });
+  });
+  group('置换抵扣', () {
+    test('抵扣只留痕，不进利润也不进成本', () {
+      const l = ProfitLine(
+        itemId: 'trade-1',
+        status: ItemStatus.sold,
+        buyPriceCents: 70000,
+        expenseCents: 0,
+        sellPriceCents: 150000,
+        tradeInCents: 80000,
+      );
+
+      // 利润 = 卖价 − 买价 − 费用；抵扣既不是收入也不是成本。
+      expect(l.profitCents, 80000);
+      expect(l.totalCostCents, 70000);
+
+      final agg = ProfitCalculator.aggregate([l]);
+      expect(agg.summary.realizedProfitCents, 80000);
+      expect(agg.summary.tradeInTotalCents, 80000);
     });
   });
 }

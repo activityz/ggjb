@@ -51,6 +51,33 @@ class Items extends Table {
   DateTimeColumn get deletedAt => dateTime().nullable()();
   TextColumn get deviceId => text()();
 
+  // -------------------------------------------------------------------
+  // v4 新增列。
+  //
+  // **必须声明在表定义的最后。** SQLite 的 `ALTER TABLE ADD COLUMN` 只能
+  // 把列追加到末尾，而 drift 建新库时按声明顺序排。这三位如果写在中间，
+  // 「全新安装的库」和「v3 升级上来的库」列顺序就会不一样，
+  // 同步时 merge.dart 的 `_verifySchema` 会直接判为两端不兼容。
+  // -------------------------------------------------------------------
+
+  /// 电池健康百分比（0–100 整数）。null = 没测或没填。
+  ///
+  /// 用整数而不是「95新」这类文本：以后要按它排序、算均值、看衰减曲线，
+  /// 文本没法比大小。
+  IntColumn get batteryHealth => integer().nullable()();
+
+  /// 置换时的挂牌价（分）。例：挂牌 1000、旧机抵 600、实收 400。
+  ///
+  /// [sellPriceCents] 存的是**实收**（参与利润），这里只做记录，
+  /// 两者之差就是抵扣额。挂牌价为空表示普通交易。
+  IntColumn get listPriceCents => integer().nullable()();
+
+  /// 置换时买家旧机折的价（分）。
+  ///
+  /// **当前不参与利润计算**：旧机的价值要等它作为新商品再卖出去才结算，
+  /// 否则同一笔 600 元会被算两次。只单独展示。
+  IntColumn get tradeInCents => integer().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -169,6 +196,38 @@ class DictEntries extends Table {
   TextColumn get parentId => text().nullable()();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   IntColumn get builtIn => integer().withDefault(const Constant(0))();
+
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+  TextColumn get deviceId => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// 运营成本：不挂在任何一个商品上的支出。
+///
+/// 和 [Expenses] 的区别是「能不能摊到某一单」—— 运费、平台手续费、
+/// 维修费摊得到，所以记在费用表里直接扣进那一单的利润；房租、包材、
+/// 软件订阅摊不到，单独记在这里，看板按「总利润 − 运营成本」算净利。
+///
+/// 刻意不复用 `expenses` 加一列 `item_id` 可空：那会让「费用合计」
+/// 聚合到处都要多一个 `item_id IS NOT NULL`，漏一处就把房租算进单笔利润。
+class OperatingCosts extends Table {
+  TextColumn get id => text()();
+
+  /// 发生日期。看板按它做时间筛选，必填（默认今天）。
+  DateTimeColumn get spentAt => dateTime()();
+
+  /// 类别文本快照，来自字典 `dict_entries.kind = 'operating'`。
+  ///
+  /// 存文本不存外键，和商品表的品牌/分类一致：字典改名不回写历史。
+  TextColumn get kind => text()();
+
+  IntColumn get amountCents => integer()();
+
+  TextColumn get note => text().nullable()();
 
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();

@@ -3,8 +3,8 @@ import 'package:ggjb/domain/dict_seeds.dart';
 
 void main() {
   group('DictSeeds 结构', () {
-    test('8 类字典都有中文名且 kind 唯一', () {
-      expect(DictSeeds.kinds.length, 8);
+    test('9 类字典都有中文名且 kind 唯一', () {
+      expect(DictSeeds.kinds.length, 9);
       final ids = DictSeeds.kinds.map((e) => e.kind).toSet();
       expect(ids.length, DictSeeds.kinds.length);
       for (final k in DictSeeds.kinds) {
@@ -30,6 +30,7 @@ void main() {
         DictSeeds.kindSource,
         DictSeeds.kindPlatform,
         DictSeeds.kindCondition,
+        DictSeeds.kindOperating,
       };
       expect(declared.length, DictSeeds.kinds.length);
       expect(declared, DictSeeds.kinds.map((e) => e.kind).toSet());
@@ -37,8 +38,8 @@ void main() {
   });
 
   group('DictSeeds 数据', () {
-    test('扁平列表覆盖除品牌机型外的 6 类，且每类非空', () {
-      expect(DictSeeds.flatKinds.length, 6);
+    test('扁平列表覆盖除品牌机型外的 7 类，且每类非空', () {
+      expect(DictSeeds.flatKinds.length, 7);
       for (final group in DictSeeds.flatKinds) {
         expect(group.items, isNotEmpty, reason: '${group.kind} 不能为空');
       }
@@ -99,7 +100,7 @@ void main() {
       );
     });
 
-    test('6 类扁平数据的 id 全局唯一', () {
+    test('7 类扁平数据的 id 全局唯一', () {
       final ids = <String>{};
       for (final group in DictSeeds.flatKinds) {
         for (final label in group.items) {

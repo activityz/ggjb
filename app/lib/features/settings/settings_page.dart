@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
@@ -19,6 +19,7 @@ import '../../sync/client.dart';
 import '../../sync/merge.dart';
 import '../../domain/app_paths.dart';
 import '../dict/dict_manage_page.dart';
+import '../operating/operating_cost_page.dart';
 
 class DbStats {
   const DbStats({
@@ -213,7 +214,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final deviceRow = ref.watch(localDeviceProvider).value;
     if (deviceRow != null) deviceName = deviceRow.name;
     final stats = ref.watch(dbStatsProvider);
-    final aggregate = ref.watch(profitSummaryProvider);
+    final aggregate = ref.watch(profitSummaryProvider(const DashboardFilter()));
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
@@ -247,6 +248,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
                       builder: (_) => const DictManagePage(),
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.receipt_long_outlined),
+                  title: const Text('运营成本'),
+                  subtitle: const Text('房租 / 水电 / 快递 / 推广，按月花的钱'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          const OperatingCostPage(filter: DashboardFilter()),
                     ),
                   ),
                 ),
@@ -424,14 +438,24 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       subtitle: Text(
                         sync.hosting
                             ? '${_addressText(sync.port)} · 配对码 ${sync.pairCode}'
-                            : '配对过就会自动开着，另一台开机后能连过来',
+                            : peers.isEmpty
+                                ? '点「开启」在这台设备上等另一台连过来'
+                                : '配对过就会自动开着，另一台开机后能连过来',
                       ),
                       isThreeLine: sync.hosting && _ips.length > 1,
                       trailing: TextButton(
                         onPressed: () async {
-                          await sync.toggleHost();
+                          final error = await sync.toggleHost();
                           if (!mounted) return;
                           await _refreshIps();
+                          if (!mounted) return;
+                          // 失败原因必须说出来：以前这里不看不报，
+                          // 端口被占时用户只会看到按钮仍写着「开启」。
+                          if (error != null) {
+                            _toast(error);
+                          } else if (sync.hosting) {
+                            _toast('已开启，配对码 ${sync.pairCode}');
+                          }
                         },
                         child: Text(sync.hosting ? '停止' : '开启'),
                       ),

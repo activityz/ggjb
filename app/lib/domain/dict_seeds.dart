@@ -17,6 +17,9 @@ class DictSeeds {
   static const String kindPlatform = 'platform';
   static const String kindCondition = 'condition';
 
+  /// 运营成本类别（v5 新增）。只用于「运营成本」页的分类下拉。
+  static const String kindOperating = 'operating';
+
   /// 全部字典类别，含中文名，UI 里按这个顺序展示。
   static const List<({String kind, String label})> kinds = [
     (kind: kindBrand, label: '品牌'),
@@ -27,6 +30,7 @@ class DictSeeds {
     (kind: kindSource, label: '买入来源'),
     (kind: kindPlatform, label: '卖出渠道'),
     (kind: kindCondition, label: '成色'),
+    (kind: kindOperating, label: '运营成本'),
   ];
 
   static String kindLabel(String kind) {
@@ -150,7 +154,11 @@ class DictSeeds {
   ];
 
   /// 买入来源。
+  ///
+  /// 采货侠、拍机堂是同行的手机批发/回收平台，二手贩子进货基本就这几个渠道，
+  /// 放在最前面（顺序 = 录入时的点选频次）。
   static const List<String> sources = [
+    '采货侠', '拍机堂',
     '闲鱼', '转转', '爱回收', '京东拍拍', '淘宝',
     '拼多多', '贴吧', '校园群', '朋友圈', '论坛',
     '线下店', '朋友', '同事', '家人', '其他',
@@ -171,6 +179,11 @@ class DictSeeds {
     '拆修过', '缺配件', '仅主板',
   ];
 
+  /// 运营成本类别。都是「摊不到某一单」的固定支出。
+  static const List<String> operating = [
+    '房租', '水电', '包装耗材', '快递费', '软件订阅', '推广', '其他',
+  ];
+
   /// 无层级的字典类别 → 取值列表。灌库时统一遍历这组，
   /// 加新类别只要往这里加一行，不用再改迁移代码。
   static const List<({String kind, List<String> items})> flatKinds = [
@@ -180,5 +193,6 @@ class DictSeeds {
     (kind: kindSource, items: sources),
     (kind: kindPlatform, items: platforms),
     (kind: kindCondition, items: conditions),
+    (kind: kindOperating, items: operating),
   ];
 }
