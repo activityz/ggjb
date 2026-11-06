@@ -11,7 +11,9 @@
 ; 2) 卸载不删 data\ —— 那是用户几年的账，删程序不该顺手删账本。
 
 #define AppName "搞个机吧"
-#define AppVersion "1.5.1"
+; 版本号跟 app/pubspec.yaml 的 version 保持一致（发版前对一下，别只改一边）。
+; 产物名就是靠它拼的，写错了 dist 里会出现两个版本号不同的安装包。
+#define AppVersion "1.9.0"
 #define AppExe "ggjb.exe"
 #define AppSource "..\dist\ggjb-windows-x64"
 
@@ -79,12 +81,9 @@ ButtonBrowse=浏览(&R)...
 ButtonYes=是(&Y)
 ButtonNo=否(&N)
 ButtonOK=确定
-ButtonClose=关闭
 
 ExitSetupTitle=确定退出安装？
 ExitSetupMessage=安装还没完成。现在退出的话，已经复制的文件会保留下来。%n%n确定要退出吗？
-ExitSetupExitButton=退出(&X)
-ExitSetupStayButton=继续安装(&R)
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务:"

@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -28,6 +30,17 @@ final deviceIdProvider = Provider<String>(
 
 final deviceNameProvider = Provider<String>(
   (ref) => throw UnimplementedError('deviceNameProvider 必须在 main() 中 override'),
+);
+
+/// 是否提供摄像头扫码入口。
+///
+/// `mobile_scanner` 的插件平台只有 android / ios / macos / web，**没有
+/// Windows**。桌面端不展示入口，避免出现「按钮在但点了没反应」的假入口。
+///
+/// 用 provider 而不是在 widget 里直接判平台：widget 测试跑在桌面宿主上，
+/// 写死平台会让「Android 上应有按钮」这条规格没法测；这里可以 override。
+final scanAvailableProvider = Provider<bool>(
+  (ref) => !kIsWeb && defaultTargetPlatform == TargetPlatform.android,
 );
 
 /// 本机设备行。设备名可改，所以走 DB 流让 UI 跟着变。

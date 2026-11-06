@@ -10,6 +10,7 @@ import '../../sync/sync_controller.dart';
 import '../../ui/particles.dart';
 import '../dashboard/dashboard_page.dart';
 import '../item_list/item_list_page.dart';
+import '../scan/scan_entry_button.dart';
 import '../settings/settings_page.dart';
 
 /// 主骨架：窄屏走底部导航，宽屏（Windows）走左侧 NavigationRail。
@@ -102,6 +103,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     return AppBar(
       title: Text(_titles[_index]),
       actions: <Widget>[
+        const ScanEntryButton(),
         ListenableBuilder(
           listenable: _sync,
           builder: (context, _) {

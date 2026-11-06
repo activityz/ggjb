@@ -79,6 +79,7 @@ openspec archive <kebab-name>     # 归档进 changes/archive/，delta 合进 op
 
 `openspec/specs/` 是「当前真相」，`openspec/changes/` 只放未归档提案。
 汇报按「文件变更展示」硬规则：逐文件贴 diff，末尾单独写「改动清单：」。
+生成长文档（proposal / design / 汇报正文）后，先给 3–5 行短总结——做什么、关键取舍、代价、当前状态——再贴全文或 diff。用户原话：「以后每次生成文档后总结一下，太长了看不完」。
 
 ### 1.7 违规处理
 

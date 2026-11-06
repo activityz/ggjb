@@ -49,6 +49,12 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
   ItemStatus _status = ItemStatus.inStock;
   DateTime? _buyDate;
   DateTime? _sellDate;
+
+  /// 保修三字段。只有 [_warrantyStatus] 是「在保」时两个日期才有意义，
+  /// 切到其他状态就地清空，免得旧日期跟着一条已过保单跑进库里。
+  WarrantyStatus _warrantyStatus = WarrantyStatus.none;
+  DateTime? _warrantyStart;
+  DateTime? _warrantyEnd;
   bool _loading = true;
   bool _saving = false;
 
@@ -97,6 +103,12 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
       _status = item.status;
       _buyDate = item.buyDate;
       _sellDate = item.sellDate;
+
+      // 只用库里的值，不做任何预填：老单据本来就不知道保修，
+      // 拿买入日/今天去补一个「保修开始」等于编数据。
+      _warrantyStatus = item.warrantyStatus;
+      _warrantyStart = item.warrantyStart;
+      _warrantyEnd = item.warrantyEnd;
 
       _expenses
         ..clear()
@@ -279,6 +291,32 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
             hint: '例：88，不填就空着',
             keyboardType: TextInputType.number,
           ),
+
+          _section('保修'),
+          DropdownButtonFormField<WarrantyStatus>(
+            initialValue: _warrantyStatus,
+            decoration: const InputDecoration(labelText: '保修状态'),
+            items: WarrantyStatus.values
+                .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
+                .toList(),
+            onChanged: _onWarrantyChanged,
+          ),
+          // 只有「在保」才要录起止日：无保修/已过保的例子记日期没有意义，
+          // 反而诱使自己去猜。
+          if (_warrantyStatus.hasDates) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _dateField('保修开始', _warrantyStart, _pickWarrantyStart),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _dateField('保修到期', _warrantyEnd, _pickWarrantyEnd),
+                ),
+              ],
+            ),
+          ],
 
           const SizedBox(height: 8),
           _section('卖出情况'),
@@ -528,6 +566,43 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
     if (picked != null) setState(() => _sellDate = picked);
   }
 
+  Future<void> _pickWarrantyStart() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _warrantyStart ?? _buyDate ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _warrantyStart = picked);
+  }
+
+  Future<void> _pickWarrantyEnd() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _warrantyEnd ?? _warrantyStart ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _warrantyEnd = picked);
+  }
+
+  /// 切换保修状态。
+  ///
+  /// 切到「在保」时如果还没有开始日，拿买入日（新建时默认今天）预填：
+  /// 二手商品的保修大多从买入那天起算，先给个合理值比报空好改。
+  void _onWarrantyChanged(WarrantyStatus? value) {
+    final next = value ?? WarrantyStatus.none;
+    setState(() {
+      _warrantyStatus = next;
+      if (!next.hasDates) {
+        _warrantyStart = null;
+        _warrantyEnd = null;
+      } else {
+        _warrantyStart ??= _buyDate ?? DateTime.now();
+      }
+    });
+  }
+
   Future<void> _save() async {
     final title = _title.text.trim();
     if (title.isEmpty) {
@@ -625,6 +700,11 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
           batteryHealth: battery,
           listPriceCents: listPrice?.cents,
           tradeInCents: tradeIn?.cents,
+          // 非在保一律写 null：即使控件状态被改脏了，也不让两个日期跟着
+          // 一条「无保修」的机器落库（读端才能无条件按状态展示）。
+          warrantyStatus: _warrantyStatus,
+          warrantyStart: _warrantyStatus.hasDates ? _warrantyStart : null,
+          warrantyEnd: _warrantyStatus.hasDates ? _warrantyEnd : null,
         ),
         expenseDrafts,
       );

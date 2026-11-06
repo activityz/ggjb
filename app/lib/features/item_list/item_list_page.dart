@@ -1,3 +1,4 @@
+import '../barcode/qr_dialog.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -483,6 +484,11 @@ class _ItemTile extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              leading: const Icon(Icons.qr_code_2),
+              title: const Text('二维码'),
+              onTap: () => Navigator.of(ctx).pop('qr'),
+            ),
+            ListTile(
               leading: Icon(
                 Icons.delete_outline,
                 color: Theme.of(ctx).colorScheme.error,
@@ -502,6 +508,14 @@ class _ItemTile extends StatelessWidget {
         ),
       ),
     );
+    if (picked == 'qr') {
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) =>
+            QrDialog(itemId: row.item.id, title: row.item.title),
+      );
+    }
     if (picked == 'delete') onDelete();
   }
 
@@ -547,6 +561,23 @@ class _ItemTile extends StatelessWidget {
                       const SizedBox(width: 6),
                     ],
                     _StatusBadge(status: item.status),
+                    IconButton(
+                      tooltip: '二维码',
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      onPressed: () => showDialog<void>(
+                        context: context,
+                        builder: (_) => QrDialog(
+                          itemId: item.id,
+                          title: item.title,
+                        ),
+                      ),
+                      icon: const Icon(Icons.qr_code_2, size: 20),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 6),

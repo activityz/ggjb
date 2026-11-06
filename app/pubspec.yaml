@@ -1,8 +1,8 @@
-﻿name: ggjb
+name: ggjb
 description: "个人二手交易利润记账（本地优先，Windows + Android）。"
 publish_to: 'none'
 
-version: 1.5.1+7
+version: 1.9.0+11
 
 environment:
   sdk: ^3.9.2
@@ -46,10 +46,28 @@ dependencies:
   file_picker: ^11.0.3
   share_plus: ^12.0.2
 
+  # 二维码：qr_flutter 纯 Dart + CustomPainter，无平台代码，Windows / Android 一致。
+  # 它依赖的 qr 3.0.3 已由 mobile_scanner 带进 lock，不必单独声明。
+  qr_flutter: ^4.1.0
+
+  # Windows 端蓝牙 SPP 打印走纯 Dart FFI（openprinter/bluetoothapis 都在这个包里）。
+  # 它本来就在 lock 里（share_plus 等的传递依赖），这里只是提为直接依赖，版本不变。
+  win32: ^5.15.0
+  # win32 的 FFI 调用需要 calloc / malloc，这些在 ffi 包里（也是传递依赖，版本不变）。
+  ffi: ^2.1.0
+
+  # 扫码：plugin 平台只有 android / ios / macos / web，**没有 Windows**。
+  # 因此扫码入口只在 Android 出现（见 lib/app/providers.dart 的 scanAvailableProvider）。
+  mobile_scanner: ^7.5.0
+
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  # 只为迁移测试：需要拿 sqlite3 造一个旧版库文件再让 AppDatabase 升级它。
+  # 本来就是 drift 的传递依赖，这里只是把它提为直接依赖，不新增下载。
+  sqlite3: ^2.9.4
   drift_dev: ^2.31.0
   build_runner: ^2.4.13
 

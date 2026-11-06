@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../../domain/date_period.dart';
 import '../../domain/enums.dart';
 import '../../domain/profit.dart';
+import '../../domain/scan_code.dart';
 import '../dao/attachment_dao.dart';
 import '../dao/item_dao.dart';
 import '../db/app_database.dart';
@@ -34,6 +35,9 @@ class ItemDraft {
     this.batteryHealth,
     this.listPriceCents,
     this.tradeInCents,
+    this.warrantyStatus = WarrantyStatus.none,
+    this.warrantyStart,
+    this.warrantyEnd,
   });
 
   final String? id;
@@ -67,6 +71,15 @@ class ItemDraft {
 
   /// 置换时旧机抵扣额（分）。只记录，不参与利润。
   final int? tradeInCents;
+
+  /// 保修状态。默认「无保修」= 用户没选。
+  final WarrantyStatus warrantyStatus;
+
+  /// 保修开始日 / 到期日，**只有 [WarrantyStatus.active] 时有意义**。
+  ///
+  /// 清空的责任在写入端（编辑页）：非在保时传 null 进来。
+  final DateTime? warrantyStart;
+  final DateTime? warrantyEnd;
 }
 
 /// 草稿里的一条费用。
@@ -124,6 +137,18 @@ class ItemRepository {
   );
 
   Future<ItemWithExpenses?> load(String id) => _items.load(id);
+  /// 扫码定位：把扫到的原文变成一条可用记录。
+  ///
+  /// 格式不对直接判 malformed，不查库；格式对但库里没有（或已软删）
+  /// 判 notFound。相机与业务之间只有这一条 `String`，所以整条判定可测。
+  Future<ScanResolution> resolveScan(String raw) async {
+    final parsed = resolveScanText(raw);
+    if (parsed is ScanMiss) return parsed;
+    final hit = parsed as ScanHit;
+    final item = await _items.findActiveById(hit.itemId);
+    if (item == null) return ScanMiss(ScanMissReason.notFound, hit.itemId);
+    return ScanHit(item.id);
+  }
 
   Future<List<AttachmentMeta>> attachmentsOf(String itemId) =>
       _attachments.listMeta(itemId);
@@ -171,6 +196,9 @@ class ItemRepository {
         batteryHealth: Value(draft.batteryHealth),
         listPriceCents: Value(draft.listPriceCents),
         tradeInCents: Value(draft.tradeInCents),
+        warrantyStatus: Value(draft.warrantyStatus),
+        warrantyStart: Value(draft.warrantyStart),
+        warrantyEnd: Value(draft.warrantyEnd),
         createdAt: Value(now),
         updatedAt: Value(now),
         deviceId: Value(_deviceId),

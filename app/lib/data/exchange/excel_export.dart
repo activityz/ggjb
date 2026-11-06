@@ -99,6 +99,17 @@ class ExcelExportService {
         item.batteryHealth == null ? null : IntCellValue(item.batteryHealth!),
         item.listPriceCents == null ? null : _money(item.listPriceCents!),
         item.tradeInCents == null ? null : _money(item.tradeInCents!),
+        // 保修：状态总是写（旧库里默认 none，写出来就是「无保修」），
+        // 日期只在「在保」时写 —— 其他状态下库里的日期本来就应该为空。
+        TextCellValue(ExcelSchema.warrantyLabel(item.warrantyStatus)),
+        _text(
+          item.warrantyStart == null
+              ? null
+              : _date.format(item.warrantyStart!),
+        ),
+        _text(
+          item.warrantyEnd == null ? null : _date.format(item.warrantyEnd!),
+        ),
         // 以下四列由 ProfitLine 提供，口径与看板一致。
         _money(line?.expenseCents ?? 0),
         _money(line?.totalCostCents ?? item.buyPriceCents),

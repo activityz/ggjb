@@ -44,6 +44,15 @@ class ExcelSchema {
   /// 置换时买家旧机折的价。只记录，不进利润。
   static const String tradeIn = '旧机抵扣';
 
+  /// 保修状态（无保修 / 在保 / 已过保）。
+  static const String warrantyStatus = '保修状态';
+
+  /// 保修开始日。只在「在保」时有意义。
+  static const String warrantyStart = '保修开始';
+
+  /// 保修到期日。只在「在保」时有意义。
+  static const String warrantyEnd = '保修到期';
+
   static const String expenseTotal = '费用合计';
   static const String totalCost = '总投入';
 
@@ -73,6 +82,9 @@ class ExcelSchema {
     batteryHealth,
     listPrice,
     tradeIn,
+    warrantyStatus,
+    warrantyStart,
+    warrantyEnd,
     expenseTotal,
     totalCost,
     profitAmount,
@@ -134,6 +146,24 @@ class ExcelSchema {
       if (value.label == text) return value;
     }
     for (final value in ItemStatus.values) {
+      if (value.dbValue == text) return value;
+    }
+    return null;
+  }
+
+  static String warrantyLabel(WarrantyStatus value) => value.label;
+
+  /// 保修状态互转：中文标签与库内文本（none/active/expired）都认。
+  ///
+  /// 认不出返回 null（而不是默默当成「无保修」）：用户手填了「在修」这类词时，
+  /// 当成无保修会静默抹掉一条在保机器，宁可报错让他改。
+  static WarrantyStatus? warrantyFromLabel(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty) return null;
+    for (final value in WarrantyStatus.values) {
+      if (value.label == text) return value;
+    }
+    for (final value in WarrantyStatus.values) {
       if (value.dbValue == text) return value;
     }
     return null;

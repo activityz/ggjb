@@ -38,8 +38,10 @@ class AppDatabase extends _$AppDatabase {
   ///   `sell_date` 索引供日期筛选与按月统计
   /// - v5 新增 `operating_costs`（摊不到单件的运营成本）；字典增加
   ///   `operating` 类别，并把「采货侠」「拍机堂」补进买入来源最前
+  /// - v6 `items` 增加 `warranty_status`（无保修/在保/已过保，默认
+  ///   `none`）、`warranty_start`、`warranty_end`；只在「在保」时写日期
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -98,12 +100,44 @@ class AppDatabase extends _$AppDatabase {
             // 这里只补「新版本才有的项」。
             await _seedV5Extras();
           }
+          if (from < 6) {
+            // 保修三列。warranty_status 带默认 'none'，SQLite 只改表结构、
+            // 不重写旧行，旧机器读出来就是「无保修」；两个日期为 NULL = 没填。
+            // 顺序必须与 tables.dart 声明顺序一致（列序参与同步兼容性校验）。
+            //
+            // 逐列判存再加：drift 只在迁移跑完之后才写 user_version，中途被杀
+            // （断电、强退）会留下「列已加、版本号还是 5」的库，下次启动重跑
+            // 同一段就会报 duplicate column name，用户看到的是打不开。判存一下
+            // 让重跑变成幂等操作，顺序也自然保持（已存在的列本来就在末尾）。
+            await _addColumnIfMissing(m, items, items.warrantyStatus);
+            await _addColumnIfMissing(m, items, items.warrantyStart);
+            await _addColumnIfMissing(m, items, items.warrantyEnd);
+          }
         },
         beforeOpen: (details) async {
           // SQLite 默认不校验外键，必须每个连接显式打开。
           await customStatement('PRAGMA foreign_keys = ON');
         },
       );
+
+  /// 加列但允许该列已存在。
+  ///
+  /// 用于迁移段落重跑时的幂等：SQLite 不支持 `ADD COLUMN IF NOT EXISTS`，
+  /// 而 drift 只在整段迁移成功后才推进 user_version，所以中断后重跑会撞
+  /// `duplicate column name`——这会让升级失败、App 打不开库。
+  Future<void> _addColumnIfMissing(
+    Migrator m,
+    TableInfo table,
+    GeneratedColumn column,
+  ) async {
+    final info = await customSelect(
+      'PRAGMA table_info(${table.actualTableName})',
+    ).get();
+    final exists = info.any((row) => row.data['name'] == column.name);
+    if (!exists) {
+      await m.addColumn(table, column);
+    }
+  }
 
   Future<void> _createIndexes() async {
     // 同步按 updated_at 增量拉取，必须有索引。

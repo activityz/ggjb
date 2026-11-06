@@ -78,6 +78,26 @@ class Items extends Table {
   /// 否则同一笔 600 元会被算两次。只单独展示。
   IntColumn get tradeInCents => integer().nullable()();
 
+  // -------------------------------------------------------------------
+  // v6 新增列（保修）。同样必须追加在最后，原因同上。
+  // -------------------------------------------------------------------
+
+  /// 保修状态：无保修 / 在保 / 已过保。
+  ///
+  /// 不用布尔：旧机器要能区分「不知道」和「确定过保」。
+  /// 带常量默认值，而不是可空：`ALTER TABLE ADD COLUMN` 带字面量默认值时
+  /// SQLite 不会重写旧行，旧库升级后旧行读出来就是「无保修」，与新建库一致；
+  /// 若做成可空，列类型就变成 `WarrantyStatus?`，调用端处处要判 null。
+  TextColumn get warrantyStatus => text()
+      .map(const WarrantyStatusConverter())
+      .withDefault(const Constant('none'))();
+
+  /// 保修开始日（只存日期，时分为零）。只在「在保」时有值。
+  DateTimeColumn get warrantyStart => dateTime().nullable()();
+
+  /// 保修到期日。只在「在保」时有值。
+  DateTimeColumn get warrantyEnd => dateTime().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

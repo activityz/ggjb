@@ -1,3 +1,4 @@
+import '../scan/printer_page.dart';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -249,6 +250,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     subtitle: Text(deviceName),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: _renameDevice,
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.print_outlined),
+                    title: const Text('标签打印机'),
+                    subtitle: const Text('蓝牙连接 40×30 标签机；重启后需要重连'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const PrinterPage(),
+                      ),
+                    ),
                   ),
                   const Divider(height: 1),
                   ListTile(

@@ -199,6 +199,44 @@ class ExcelImportService {
         continue;
       }
 
+      // 保修：缺列或空值 = 无保修（老表就是这种情况，不该报错）。
+      // 认不出的词报错而不是当「无保修」——那会把一台在保机器静默抹成无保修。
+      final rawWarranty =
+          _cell(row, itemIndex[ExcelSchema.warrantyStatus]).trim();
+      final warranty = rawWarranty.isEmpty
+          ? WarrantyStatus.none
+          : ExcelSchema.warrantyFromLabel(rawWarranty);
+      if (warranty == null) {
+        errors.add(
+          ExcelRowError(
+            sheet: ExcelSchema.sheetItems,
+            row: excelRow,
+            message:
+                '保修状态「$rawWarranty」不认识（可用：'
+                '${WarrantyStatus.values.map((e) => e.label).join(' / ')}）',
+          ),
+        );
+        continue;
+      }
+      // 非在保的行即使表里残留了日期也直接丢：先去解析反而会因为
+      // 一个本来就不该存在的旧日期让整行导入失败。
+      final warrantyStart = warranty.hasDates
+          ? _parseDate(
+              _cell(row, itemIndex[ExcelSchema.warrantyStart]),
+              errors,
+              excelRow,
+              ExcelSchema.warrantyStart,
+            )
+          : null;
+      final warrantyEnd = warranty.hasDates
+          ? _parseDate(
+              _cell(row, itemIndex[ExcelSchema.warrantyEnd]),
+              errors,
+              excelRow,
+              ExcelSchema.warrantyEnd,
+            )
+          : null;
+
       if (status.isRealized && sellCents == null) {
         errors.add(
           ExcelRowError(
@@ -254,6 +292,9 @@ class ExcelImportService {
             excelRow,
             ExcelSchema.tradeIn,
           ),
+          warrantyStatus: warranty,
+          warrantyStart: warrantyStart,
+          warrantyEnd: warrantyEnd,
           status: status,
           sourcePlatform: _nullIfEmpty(
             _cell(row, itemIndex[ExcelSchema.sourcePlatform]),

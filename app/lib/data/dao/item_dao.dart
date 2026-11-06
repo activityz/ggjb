@@ -248,6 +248,13 @@ class ItemDao {
   Future<Item?> findById(String id) =>
       (_db.select(_db.items)..where((t) => t.id.equals(id))).getSingleOrNull();
 
+  /// 扫码定位：按主键取一条**未删除**的记录。
+  ///
+  /// 软删的行算「没有」——扫到已被删除的标签要提示找不到，
+  /// 而不是打开一个已经删掉的详情页。
+  Future<Item?> findActiveById(String id) => (_db.select(_db.items)
+    ..where((t) => t.id.equals(id) & t.deletedAt.isNull())).getSingleOrNull();
+
   Future<void> insertItem(ItemsCompanion companion) =>
       _db.into(_db.items).insert(companion);
 

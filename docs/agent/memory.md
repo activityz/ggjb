@@ -290,3 +290,58 @@ if (x) ...,
   所以 `.jks` 和密码要单独备份（网盘 / 密码管理器），丢了等于丢掉所有已安装用户。
 - 1.5.1 之前的包是 debug 签名（Android SDK 自带 debug.keystore）。
   **这条线之后升级到你自己的手机也要先导出备份、卸载重装**，不能直接覆盖。
+
+## 15. 蓝牙标签打印（1.8.0）
+
+- **没有引 pub 包，走自写的 Android MethodChannel**。`bluetooth_print` / `permission_handler`
+  在 `pub.flutter-io.cn` 镜像里都不存在；切到 `https://pub.dev` 解算后，`pubspec.lock` 会有
+  **247 处 url 变成 pub.dev、61 处版本条目变动**。为了一个传输层把整个项目依赖源迁走不划算。
+- 通道名 `ggjb/printer`，实现在 `app/android/app/src/main/kotlin/me/local/ggjb/MainActivity.kt`：
+  `scan`（扫 10 秒 + 已配对设备）/ `connect` / `disconnect` / `isConnected` / `write`。
+- 三条实现细节别改错：① 蓝牙操作全在单线程 executor 上跑，结果 `runOnUiThread` 回给 Flutter；
+  ② `connect` 前必须 `cancelDiscovery()`，否则系统直接拒绝建链；③ 同一时刻只留一个 socket。
+- TSPL 布局（40×30mm、203dpi、320×240 dots）：`SIZE 40 mm, 30 mm` / `GAP 2 mm, 0 mm` /
+  `QRCODE 73,8,L,6,A,0,M2,S7,"<id>"`（cell 6 dots → 29 模块 174 dots ≈ 21.75mm）/
+  `TEXT 8,190,"TSS24.BF2"` 标题 / `TEXT 8,214,"TSS16.BF2"` 明文 / `PRINT 1,1`。
+  标题按 runes 截到 16 字，按 `substring` 切会把 emoji 切半个。
+- 中文标题按 UTF-8 发；若真机打出来是乱码，说明该机型字库按 GBK 解释，改 `label_commands.dart`
+  的编码即可（标题只是给人核对的，二维码与明文才是关键）。
+- **打印机地址不落库**：`local_devices` 加列会升 `schemaVersion`（6→7），同步前版本比对
+  会拦住旧对端。打印是低频动作，重启重连一次比一次库迁移便宜。
+- 指令集按 TSPL 实现；若现场机型是 CPCL / ESC-POS，只改 `buildLabelCommands` 一个函数。
+
+## 14. 二维码与扫码（1.7.0）
+
+- **现场标签纸 40×30mm**（热敏打印头 50mm 宽，本次只用 40mm 宽）。
+- 码值 = `items.id` 原文，**不建 code 列**：QR 装得下 36 字符 UUID，所以库结构仍是 v6，
+  同步 `_verifySchema` 不受影响，不需要两端同升。Code-128 编 UUID 要 431 个模块，
+  40mm 纸根本印不出来——这是改用二维码的直接原因。
+- QR 尺寸：version 3（29×29 模块）+ 四边静区 4 模块 = 37 模块；按 5 点/模块（0.625mm）
+  约 23.1mm，40×30mm 够用。容错 M（15%）足够；H 会升到 version 5，把 30mm 高度顶满。
+- **二维码必须白底黑码**：弹窗里固定 `Colors.white`，不跟深色主题——反色后扫码器读不出来。
+- `mobile_scanner` 7.5.0 的插件平台只有 android/ios/macos/web，**没有 Windows**。扫码入口
+  用 `scanAvailableProvider`（`!kIsWeb && defaultTargetPlatform == android`）判定；
+  widget 测试里 `debugDefaultTargetPlatformOverride` 默认就是 android，断言「桌面无入口」
+  必须显式设成 `TargetPlatform.windows`，否则测出来永远是 true。
+- 相机在测试里不可用：取景抽成 `scanLauncherProvider`（返回 `Future<String?>`），测试
+  override 成直接返回码值；`ScanPage` 只做「扫到就 pop 原始字符串」。
+- `QrImageView` 的 `data` 是私有字段，测试只能断言 `backgroundColor` / `errorCorrectionLevel`
+  与明文文本；「图形里编的是不是主键」只能真机打一张扫一下。
+
+## 16. Windows 蓝牙打印（1.9.0）
+
+- **纯 Dart FFI，不写 C++ 插件**：C++ 插件要改 CMake 与 flutter_window.cpp，每次改动全量重编；
+  而这些 API 都是普通 Win32 导出函数，`win32` 包已绑定好。
+- **`ws2_32` 不在 `package:win32/win32.dart` 里**，要从 `package:win32/winsock2.dart` 单独导；
+  `socket` / `connect` / `send` / `closesocket` 都在那里，导出错了会报 undefined_method。
+- **类里别定义与全局 FFI 函数同名的方法**：`WindowsPrinterChannel.connect` 会把全局 `connect`
+  遮蔽掉，编译期报「Future<void> 不能当 int 用」。解法是顶层包一个 `_wsConnect`。
+- `BTHPROTO_RFCOMM = 0x0003` win32 没导出，自己定义；`AF_BTH` / `SOCK_STREAM` 有。
+- **`WSAStartup` 与 `WSAGetLastError` win32 也没导出**，用 `DynamicLibrary.open('ws2_32.dll')`
+  + `lookupFunction` 自己取（并做懒加载，否则非 Windows 环境 import 该文件就崩）。
+- 连接按端口 1 → 2 → 3 → 4 回退；SOCKADDR_BTH 的 `serviceClassId` 留全零 = GUID_NULL，不用赋值。
+- `library;` 指令必须在所有 import 之前，否则 analyze 报 library_directive_not_first。
+- **这套逻辑本机没有打印机可验证**：错误信息里刻意带上 WSAGetLastError 的码值，
+  用户拿到设备后试打一次，看码值就能判断是端口、配对还是地址问题。
+
+- **发版要改两处版本号**：`app/pubspec.yaml` 的 `version` 与 `installer/ggjb.iss` 的 `#define AppVersion`。只改前者会打出 `ggjb-<旧版本>-windows-setup.exe`（1.9.0 发版时踩过，装包名还是 1.6.0）。

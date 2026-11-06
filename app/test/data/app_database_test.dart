@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' show Variable;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ggjb/data/db/app_database.dart';
 import 'package:ggjb/domain/dict_seeds.dart';
+import 'package:ggjb/domain/enums.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 void main() {
   late AppDatabase db;
@@ -31,8 +35,8 @@ void main() {
     return rows.map((r) => r.data['label']! as String).toList();
   }
 
-  test('schemaVersion 是 5', () {
-    expect(db.schemaVersion, 5);
+  test('schemaVersion 是 6', () {
+    expect(db.schemaVersion, 6);
   });
 
   test('七张业务表都建出来了', () async {
@@ -118,5 +122,135 @@ void main() {
       ),
       greaterThan(0),
     );
+  });
+
+  test('v5 旧库升级：三列补在末尾，旧行读出来是无保修', () async {
+    // 真拿一个 user_version = 5 的旧文件来开：造一个只有旧列的表，
+    // 再让 AppDatabase 走 onUpgrade 分支。
+    final dir = await Directory.systemTemp.createTemp('ggjb_mig_');
+    addTearDown(() async {
+      try {
+        await dir.delete(recursive: true);
+      } on FileSystemException {
+        // 临时目录删不掉不影响断言。
+      }
+    });
+    final file = File('${dir.path}/old.sqlite');
+
+    // 旧库的 DDL 不手抄：直接拿当前建表语句删掉三列，保证「除了这三列以
+    // 外全部一致」——手抄漏一列就会变成测一个不存在的库。
+    final ddl =
+        (await db
+                .customSelect(
+                  "SELECT sql FROM sqlite_master WHERE name = 'items'",
+                )
+                .getSingle())
+            .data['sql']! as String;
+
+    final legacy = sqlite3.open(file.path);
+    legacy.execute(ddl);
+    legacy.execute('ALTER TABLE items DROP COLUMN warranty_status');
+    legacy.execute('ALTER TABLE items DROP COLUMN warranty_start');
+    legacy.execute('ALTER TABLE items DROP COLUMN warranty_end');
+    legacy.execute(
+      'INSERT INTO items (id, title, brand, note, status, buy_date, '
+      'buy_price_cents, sell_price_cents, battery_health, trade_in_cents, '
+      'created_at, updated_at, device_id) VALUES ('
+      "'old-1', '老机器', 'Apple', '有划痕', 'sold', 1700000000, "
+      "100000, 640000, 92, 550000, 0, 0, 'dev-old')",
+    );
+    legacy.execute('PRAGMA user_version = 5');
+    legacy.dispose();
+
+    final upgraded = AppDatabase(NativeDatabase(file));
+    addTearDown(upgraded.close);
+
+    final row = (await upgraded.select(upgraded.items).get()).single;
+    expect(row.warrantyStatus, WarrantyStatus.none, reason: '旧行不能凭空变成在保');
+    expect(row.warrantyStart, isNull);
+    expect(row.warrantyEnd, isNull);
+
+    // 升级不能动旧数据：同一个接口把旧字段逐个读回来对一遍，
+    // 只看保修三列会漏掉「ADD COLUMN 把表重建了」这类事故。
+    expect(row.title, '老机器');
+    expect(row.brand, 'Apple');
+    expect(row.note, '有划痕');
+    expect(row.buyPriceCents, 100000);
+    expect(row.sellPriceCents, 640000);
+    expect(row.batteryHealth, 92);
+    expect(row.tradeInCents, 550000);
+    expect(row.deviceId, 'dev-old');
+
+    // 列序必须与新建库一致（三列追加在最后），否则同步会判两端不兼容。
+    final columns = await upgraded
+        .customSelect('PRAGMA table_info(items)')
+        .get();
+    final names = columns.map((r) => r.data['name']! as String).toList();
+    expect(
+      names.sublist(names.length - 3),
+      ['warranty_status', 'warranty_start', 'warranty_end'],
+    );
+
+    // 升级出来的表结构与全新建库逐字相同（含 NOT NULL 与 DEFAULT），
+    // 否则两端 merge 时会因为列定义差异被判成不同库。
+    final upgradedSql =
+        (await upgraded
+                .customSelect(
+                  "SELECT sql FROM sqlite_master WHERE name = 'items'",
+                )
+                .getSingle())
+            .data['sql']! as String;
+    expect(upgradedSql, ddl);
+  });
+
+  test('升级中断后重跑：已加的列不重复报错，剩下的补上', () async {
+    // drift 只在迁移跑完后才写 user_version，所以半路被杀会留下
+    // 「列加了一部分、版本号还是 5」的库。重开时必须能继续跑完。
+    final dir = await Directory.systemTemp.createTemp('ggjb_resume_');
+    addTearDown(() async {
+      try {
+        await dir.delete(recursive: true);
+      } on FileSystemException {
+        // 删不掉不影响断言。
+      }
+    });
+    final file = File('${dir.path}/half.sqlite');
+
+    final ddl =
+        (await db
+                .customSelect(
+                  "SELECT sql FROM sqlite_master WHERE name = 'items'",
+                )
+                .getSingle())
+            .data['sql']! as String;
+
+    final legacy = sqlite3.open(file.path);
+    legacy.execute(ddl);
+    // 只把三列里的第一列加回去，模拟「跑到第二个 addColumn 之前被kill」。
+    legacy.execute('ALTER TABLE items DROP COLUMN warranty_start');
+    legacy.execute('ALTER TABLE items DROP COLUMN warranty_end');
+    legacy.execute('PRAGMA user_version = 5');
+    legacy.dispose();
+
+    final resumed = AppDatabase(NativeDatabase(file));
+    addTearDown(resumed.close);
+
+    final names = (await resumed.customSelect('PRAGMA table_info(items)').get())
+        .map((r) => r.data['name']! as String)
+        .toList();
+    expect(
+      names.sublist(names.length - 3),
+      ['warranty_status', 'warranty_start', 'warranty_end'],
+      reason: '重跑要把缺的两列补在末尾，不能重复加第一列',
+    );
+    // 结构又回到与新建库一致。
+    final resumedSql =
+        (await resumed
+                .customSelect(
+                  "SELECT sql FROM sqlite_master WHERE name = 'items'",
+                )
+                .getSingle())
+            .data['sql']! as String;
+    expect(resumedSql, ddl);
   });
 }

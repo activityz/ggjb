@@ -97,6 +97,29 @@ enum AttachmentRole {
       );
 }
 
+/// 保修状态。三态，由用户显式选择，**不由到期日推导**：
+/// 「不知道到期日但确实还在保」与「三年前的老机器」都要能被如实记录。
+///
+/// 只有 [active] 才录入与展示保修起止日期；其余两态的日期由写入端清空。
+enum WarrantyStatus {
+  none('none', '无保修'),
+  active('active', '在保'),
+  expired('expired', '已过保');
+
+  const WarrantyStatus(this.dbValue, this.label);
+
+  final String dbValue;
+  final String label;
+
+  /// 只有「在保」才录入与展示保修起止日期。
+  bool get hasDates => this == WarrantyStatus.active;
+
+  static WarrantyStatus fromDb(String value) => values.firstWhere(
+        (e) => e.dbValue == value,
+        orElse: () => WarrantyStatus.none,
+      );
+}
+
 // ---------------------------------------------------------------------------
 // Drift TypeConverter：枚举 <-> snake_case 文本
 // ---------------------------------------------------------------------------
@@ -129,6 +152,16 @@ class ExpenseSideConverter extends TypeConverter<ExpenseSide, String> {
 
   @override
   String toSql(ExpenseSide value) => value.dbValue;
+}
+
+class WarrantyStatusConverter extends TypeConverter<WarrantyStatus, String> {
+  const WarrantyStatusConverter();
+
+  @override
+  WarrantyStatus fromSql(String fromDb) => WarrantyStatus.fromDb(fromDb);
+
+  @override
+  String toSql(WarrantyStatus value) => value.dbValue;
 }
 
 class AttachmentRoleConverter extends TypeConverter<AttachmentRole, String> {

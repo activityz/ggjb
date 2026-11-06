@@ -17,6 +17,7 @@ import '../../domain/money.dart';
 import '../../ui/glass_card.dart';
 import '../../ui/gradient_text.dart';
 import '../../ui/particles.dart';
+import '../barcode/qr_dialog.dart';
 import '../common/dict_field.dart';
 import '../item_edit/item_edit_page.dart';
 
@@ -48,6 +49,17 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
         appBar: AppBar(
           title: const Text('商品详情'),
           actions: [
+            IconButton(
+              tooltip: '二维码',
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (_) => QrDialog(
+                  itemId: widget.itemId,
+                  title: async.value?.item.title,
+                ),
+              ),
+              icon: const Icon(Icons.qr_code_2),
+            ),
             IconButton(
               tooltip: '编辑',
               onPressed: _busy ? null : _edit,
@@ -307,6 +319,13 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
               _kv('买入成色', item.conditionBought ?? '—'),
               if (item.batteryHealth != null)
                 _kv('电池健康', '${item.batteryHealth}%'),
+              // 保修：在保才给起止日；已过保只留状态一行；无保修不提（旧单据
+              // 一律是 none，凭空多一行「无保修」只会让老记录看起来变脏了）。
+              if (item.warrantyStatus == WarrantyStatus.active) ...[
+                _kv('保修开始', _dateText(item.warrantyStart)),
+                _kv('保修到期', _dateText(item.warrantyEnd)),
+              ] else if (item.warrantyStatus == WarrantyStatus.expired)
+                _kv('保修', '已过保'),
               if (item.sellDate != null) ...[
                 const Divider(height: 20),
                 _kv('卖出日期', _dateText(item.sellDate)),

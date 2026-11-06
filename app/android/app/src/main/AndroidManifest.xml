@@ -6,6 +6,18 @@
     <!-- 作为同步主机时要在熄屏后继续应答 -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <!-- 蓝牙标签打印：走经典蓝牙 SPP，通道在 MainActivity.kt 里 -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <!-- Android 11 及以下的旧权限名 -->
+    <uses-permission android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="30"/>
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false"/>
     <application
         android:label="搞个机吧"
         android:name="${applicationName}"
