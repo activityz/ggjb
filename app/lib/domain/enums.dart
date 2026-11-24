@@ -84,6 +84,14 @@ enum AttachmentRole {
   sellShot('sell_shot', '卖出图'),
   chatScreenshot('chat_screenshot', '聊天截图'),
   serial('serial', '序列号/铭牌'),
+
+  /// 门店生成的保修卡图片。与 [serial] 不是一回事：那是买家机器上拍的
+  /// 铭牌照片（证据），这是本店给买家的交付凭证（成品）。
+  ///
+  /// 这一列是文本枚举，加值不需要升 schema：旧版本读到未知角色时，
+  /// 转换器会回落到 [other]，不会崩，也不会丢图。
+  warrantyCard('warranty_card', '保修卡'),
+
   other('other', '其他');
 
   const AttachmentRole(this.dbValue, this.label);

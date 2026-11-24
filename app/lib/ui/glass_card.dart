@@ -174,6 +174,13 @@ class _GlassCardState extends State<GlassCard> {
   }
 
   Widget _wrapGesture({required Widget child}) {
+    // 没有点击/长按处理时**不装手势层**：GestureDetector 只要注册了
+    // onTapDown/onTapUp/onTapCancel 就会进手势竞技场，而这一层在卡片内侧，
+    // 竞技场里比外层先赢下点击——外层的 onTap 就永远收不到（看板五张卡
+    // 曾因此全部点不动：卡上明明挂着 onTap，手指点了没反应）。
+    // 光斑只服务于「有 onTap 的卡」，没 handler 时本来也不必出现。
+    final enabled = widget.onTap != null || widget.onLongPress != null;
+    if (!enabled) return child;
     return GestureDetector(
       onTapDown: (d) => _updateGlow(d.localPosition),
       onTapUp: (_) => _clearGlow(),

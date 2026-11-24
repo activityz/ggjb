@@ -17,6 +17,7 @@ import '../../ui/particles.dart';
 import '../../ui/shimmer.dart';
 import '../item_detail/item_detail_page.dart';
 import '../item_edit/item_edit_page.dart';
+import '../warranty/warranty_card_dialog.dart';
 
 /// 明细列表：搜索 + 状态筛选 + 单件盈亏。
 class ItemListPage extends ConsumerStatefulWidget {
@@ -47,6 +48,9 @@ class _ItemListPageState extends ConsumerState<ItemListPage> {
   DateField? _dateField;
   DateRange _range = DateRange.all;
 
+  /// 只看亏钱的单。由看板「了结亏损」下钻带入，用户可以在筛选条上关掉。
+  bool _onlyLoss = false;
+
   /// 入场动效只播一次。
   ///
   /// 列表是 drift 的实时流，同步一次就会重建一遍。如果每次都 fadeIn + slideY，
@@ -65,6 +69,7 @@ class _ItemListPageState extends ConsumerState<ItemListPage> {
       _keyword = init.keyword;
       _dateField = init.dateField;
       _range = init.range;
+      _onlyLoss = init.onlyLoss;
       if (init.keyword.isNotEmpty) _searchController.text = init.keyword;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -92,6 +97,7 @@ class _ItemListPageState extends ConsumerState<ItemListPage> {
       keyword: _keyword,
       dateField: _dateField,
       range: _range,
+      onlyLoss: _onlyLoss,
     );
     final async = ref.watch(itemListProvider(filter));
 
@@ -156,6 +162,18 @@ class _ItemListPageState extends ConsumerState<ItemListPage> {
                               deleteIcon: const Icon(Icons.close, size: 16),
                             ),
                           ),
+                        // 只看亏损（看板「了结亏损」下钻带进来）：派生条件，
+                        // 不在筛选弹窗里，只给一颗可删标签。
+                        if (_onlyLoss)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: InputChip(
+                              label: const Text('只看亏损'),
+                              onDeleted: () =>
+                                  setState(() => _onlyLoss = false),
+                              deleteIcon: const Icon(Icons.close, size: 16),
+                            ),
+                          ),
                         _statusChip(null, '全部'),
                         for (final s in ItemStatus.values)
                           _statusChip(s, s.label),
@@ -173,6 +191,7 @@ class _ItemListPageState extends ConsumerState<ItemListPage> {
                             hasFilter:
                                 _statuses.isNotEmpty ||
                                 _keyword.isNotEmpty ||
+                                _onlyLoss ||
                                 (_dateField != null && !_range.isEmpty),
                           );
                         }
@@ -241,6 +260,7 @@ class _ItemListPageState extends ConsumerState<ItemListPage> {
       keyword: _keyword,
       dateField: _dateField,
       range: _range,
+      onlyLoss: _onlyLoss,
     );
     ref.invalidate(itemListProvider(filter));
     ref.invalidate(profitSummaryProvider);
@@ -489,6 +509,11 @@ class _ItemTile extends StatelessWidget {
               onTap: () => Navigator.of(ctx).pop('qr'),
             ),
             ListTile(
+              leading: const Icon(Icons.receipt_long),
+              title: const Text('保修卡'),
+              onTap: () => Navigator.of(ctx).pop('warranty'),
+            ),
+            ListTile(
               leading: Icon(
                 Icons.delete_outline,
                 color: Theme.of(ctx).colorScheme.error,
@@ -514,6 +539,13 @@ class _ItemTile extends StatelessWidget {
         context: context,
         builder: (_) =>
             QrDialog(itemId: row.item.id, title: row.item.title),
+      );
+    }
+    if (picked == 'warranty') {
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => WarrantyCardDialog(item: row.item),
       );
     }
     if (picked == 'delete') onDelete();
@@ -561,6 +593,20 @@ class _ItemTile extends StatelessWidget {
                       const SizedBox(width: 6),
                     ],
                     _StatusBadge(status: item.status),
+                    IconButton(
+                      tooltip: '保修卡',
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      onPressed: () => showDialog<void>(
+                        context: context,
+                        builder: (_) => WarrantyCardDialog(item: item),
+                      ),
+                      icon: const Icon(Icons.receipt_long, size: 20),
+                    ),
                     IconButton(
                       tooltip: '二维码',
                       visualDensity: VisualDensity.compact,

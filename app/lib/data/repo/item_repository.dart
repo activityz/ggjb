@@ -38,6 +38,9 @@ class ItemDraft {
     this.warrantyStatus = WarrantyStatus.none,
     this.warrantyStart,
     this.warrantyEnd,
+    this.serial,
+    this.merchantWarrantyStart,
+    this.merchantWarrantyEnd,
   });
 
   final String? id;
@@ -80,6 +83,17 @@ class ItemDraft {
   /// 清空的责任在写入端（编辑页）：非在保时传 null 进来。
   final DateTime? warrantyStart;
   final DateTime? warrantyEnd;
+
+  /// 序列号文本。null = 没填。不唯一，也不参与任何校验。
+  final String? serial;
+
+  /// 商家保修（本店对买家承诺）起止。
+  ///
+  /// 与上面三个 `warranty*` 字段是两套信息：那是厂家保修，这是商家保修。
+  /// 是否必填由状态决定（见 `domain/merchant_warranty.dart` 的
+  /// `merchantWarrantyError`），仓储层不替调用方收敛。
+  final DateTime? merchantWarrantyStart;
+  final DateTime? merchantWarrantyEnd;
 }
 
 /// 草稿里的一条费用。
@@ -199,6 +213,9 @@ class ItemRepository {
         warrantyStatus: Value(draft.warrantyStatus),
         warrantyStart: Value(draft.warrantyStart),
         warrantyEnd: Value(draft.warrantyEnd),
+        serial: Value(draft.serial),
+        merchantWarrantyStart: Value(draft.merchantWarrantyStart),
+        merchantWarrantyEnd: Value(draft.merchantWarrantyEnd),
         createdAt: Value(now),
         updatedAt: Value(now),
         deviceId: Value(_deviceId),
@@ -309,6 +326,8 @@ class ItemRepository {
     String? conditionSold,
     int? listPriceCents,
     int? tradeInCents,
+    DateTime? merchantWarrantyStart,
+    DateTime? merchantWarrantyEnd,
   }) async {
     final now = DateTime.now();
     await (_db.update(_db.items)..where((t) => t.id.equals(itemId))).write(
@@ -320,6 +339,26 @@ class ItemRepository {
         conditionSold: Value(conditionSold),
         listPriceCents: Value(listPriceCents),
         tradeInCents: Value(tradeInCents),
+        merchantWarrantyStart: Value(merchantWarrantyStart),
+        merchantWarrantyEnd: Value(merchantWarrantyEnd),
+        updatedAt: Value(now),
+      ),
+    );
+  }
+
+  /// 只补写商家保修两个日期（升级前已卖出的老记录用）。
+  ///
+  /// 不碰状态与卖出信息：这条路径存在的唯一目的是给老数据补一个承诺区间。
+  Future<void> setMerchantWarranty(
+    String itemId, {
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final now = DateTime.now();
+    await (_db.update(_db.items)..where((t) => t.id.equals(itemId))).write(
+      ItemsCompanion(
+        merchantWarrantyStart: Value(start),
+        merchantWarrantyEnd: Value(end),
         updatedAt: Value(now),
       ),
     );

@@ -7,6 +7,7 @@ import '../../app/providers.dart';
 import '../../data/repo/item_repository.dart';
 import '../../domain/dict_seeds.dart';
 import '../../domain/enums.dart';
+import '../../domain/merchant_warranty.dart';
 import '../../domain/money.dart';
 import '../common/dict_field.dart';
 
@@ -37,6 +38,9 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
   final _conditionSold = TextEditingController();
   final _note = TextEditingController();
 
+  /// 序列号文本。非必填、不唯一；保修卡上会印这一串。
+  final _serial = TextEditingController();
+
   /// 电池健康百分比（0–100）。
   final _batteryHealth = TextEditingController();
 
@@ -55,6 +59,11 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
   WarrantyStatus _warrantyStatus = WarrantyStatus.none;
   DateTime? _warrantyStart;
   DateTime? _warrantyEnd;
+
+  /// 商家保修（本店对买家的承诺）。与上面的厂家保修是两套信息，
+  /// 卖出时必填，默认开始 = 当天、到期 = 一年后。
+  DateTime? _merchantStart;
+  DateTime? _merchantEnd;
   bool _loading = true;
   bool _saving = false;
 
@@ -110,6 +119,12 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
       _warrantyStart = item.warrantyStart;
       _warrantyEnd = item.warrantyEnd;
 
+      _serial.text = item.serial ?? '';
+      // 商家保修同样不预填：升级前卖出去的机器没人记过承诺期限，
+      // 编一个日期等于在保修卡上印一条店主没答应过的保修。
+      _merchantStart = item.merchantWarrantyStart;
+      _merchantEnd = item.merchantWarrantyEnd;
+
       _expenses
         ..clear()
         ..addAll(
@@ -158,6 +173,7 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
       _conditionBought,
       _conditionSold,
       _note,
+      _serial,
       _batteryHealth,
       _listPrice,
       _tradeIn,
@@ -291,11 +307,16 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
             hint: '例：88，不填就空着',
             keyboardType: TextInputType.number,
           ),
+          _field(
+            controller: _serial,
+            label: '序列号',
+            hint: '非必填；保修卡上会印这串号',
+          ),
 
-          _section('保修'),
+          _section('厂家保修'),
           DropdownButtonFormField<WarrantyStatus>(
             initialValue: _warrantyStatus,
-            decoration: const InputDecoration(labelText: '保修状态'),
+            decoration: const InputDecoration(labelText: '厂家保修状态'),
             items: WarrantyStatus.values
                 .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
                 .toList(),
@@ -308,11 +329,11 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
             Row(
               children: [
                 Expanded(
-                  child: _dateField('保修开始', _warrantyStart, _pickWarrantyStart),
+                  child: _dateField('厂家保修开始', _warrantyStart, _pickWarrantyStart),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _dateField('保修到期', _warrantyEnd, _pickWarrantyEnd),
+                  child: _dateField('厂家保修到期', _warrantyEnd, _pickWarrantyEnd),
                 ),
               ],
             ),
@@ -326,9 +347,7 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
             items: ItemStatus.values
                 .map((s) => DropdownMenuItem(value: s, child: Text(s.label)))
                 .toList(),
-            onChanged: (v) {
-              if (v != null) setState(() => _status = v);
-            },
+            onChanged: _onStatusChanged,
           ),
           if (isSellSide) ...[
             const SizedBox(height: 12),
@@ -376,6 +395,41 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
                 controller: _conditionSold,
                 label: '卖出时成色',
                 kind: DictSeeds.kindCondition,
+              ),
+            ],
+            // 商家保修：本店给买家的承诺区间，卖出时必填。
+            // 与上面的「厂家保修」是两套信息，互不覆盖。
+            if (_status.isRealized) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: _dateField(
+                      '商家保修开始',
+                      _merchantStart,
+                      _pickMerchantStart,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _dateField(
+                      '商家保修到期',
+                      _merchantEnd,
+                      _pickMerchantEnd,
+                    ),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  '商家保修是店里给买家的承诺，会印在保修卡上；默认当天起保一年。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ),
             ],
           ],
@@ -603,6 +657,42 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
     });
   }
 
+  /// 切换商品状态。
+  ///
+  /// 切到卖出侧时把商家保修预填成「当天 → 一年后」。只在两个日期都还空着时
+  /// 才填：用户改过的日期不能被一次状态切换重置。
+  void _onStatusChanged(ItemStatus? value) {
+    if (value == null) return;
+    setState(() {
+      _status = value;
+      if (value.isRealized && _merchantStart == null && _merchantEnd == null) {
+        final start = DateTime.now();
+        _merchantStart = start;
+        _merchantEnd = addOneYear(start);
+      }
+    });
+  }
+
+  Future<void> _pickMerchantStart() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _merchantStart ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _merchantStart = picked);
+  }
+
+  Future<void> _pickMerchantEnd() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _merchantEnd ?? _merchantStart ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => _merchantEnd = picked);
+  }
+
   Future<void> _save() async {
     final title = _title.text.trim();
     if (title.isEmpty) {
@@ -627,6 +717,18 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
     final sell = sellText.isEmpty ? null : Money.tryParseYuan(sellText);
     if (sellText.isNotEmpty && sell == null) {
       _toast('卖出价格式不对');
+      return;
+    }
+
+    // 商家保修：卖出时必须填全。校验放在写入口而不是读端，
+    // 保证「已卖出 = 有承诺区间」这个不变量在库层面真的成立。
+    final merchantError = merchantWarrantyError(
+      _status,
+      _merchantStart,
+      _merchantEnd,
+    );
+    if (merchantError != null) {
+      _toast(merchantError);
       return;
     }
 
@@ -702,6 +804,10 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
           tradeInCents: tradeIn?.cents,
           // 非在保一律写 null：即使控件状态被改脏了，也不让两个日期跟着
           // 一条「无保修」的机器落库（读端才能无条件按状态展示）。
+          serial: _emptyToNull(_serial.text),
+          // 非卖出侧一律写 null：退回在库或报废时不该留着上一笔的承诺。
+          merchantWarrantyStart: _status.isRealized ? _merchantStart : null,
+          merchantWarrantyEnd: _status.isRealized ? _merchantEnd : null,
           warrantyStatus: _warrantyStatus,
           warrantyStart: _warrantyStatus.hasDates ? _warrantyStart : null,
           warrantyEnd: _warrantyStatus.hasDates ? _warrantyEnd : null,

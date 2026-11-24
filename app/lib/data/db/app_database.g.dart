@@ -301,6 +301,37 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _serialMeta = const VerificationMeta('serial');
+  @override
+  late final GeneratedColumn<String> serial = GeneratedColumn<String>(
+    'serial',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _merchantWarrantyStartMeta =
+      const VerificationMeta('merchantWarrantyStart');
+  @override
+  late final GeneratedColumn<DateTime> merchantWarrantyStart =
+      GeneratedColumn<DateTime>(
+        'merchant_warranty_start',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _merchantWarrantyEndMeta =
+      const VerificationMeta('merchantWarrantyEnd');
+  @override
+  late final GeneratedColumn<DateTime> merchantWarrantyEnd =
+      GeneratedColumn<DateTime>(
+        'merchant_warranty_end',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -331,6 +362,9 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
     warrantyStatus,
     warrantyStart,
     warrantyEnd,
+    serial,
+    merchantWarrantyStart,
+    merchantWarrantyEnd,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -542,6 +576,30 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
         ),
       );
     }
+    if (data.containsKey('serial')) {
+      context.handle(
+        _serialMeta,
+        serial.isAcceptableOrUnknown(data['serial']!, _serialMeta),
+      );
+    }
+    if (data.containsKey('merchant_warranty_start')) {
+      context.handle(
+        _merchantWarrantyStartMeta,
+        merchantWarrantyStart.isAcceptableOrUnknown(
+          data['merchant_warranty_start']!,
+          _merchantWarrantyStartMeta,
+        ),
+      );
+    }
+    if (data.containsKey('merchant_warranty_end')) {
+      context.handle(
+        _merchantWarrantyEndMeta,
+        merchantWarrantyEnd.isAcceptableOrUnknown(
+          data['merchant_warranty_end']!,
+          _merchantWarrantyEndMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -667,6 +725,18 @@ class $ItemsTable extends Items with TableInfo<$ItemsTable, Item> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}warranty_end'],
       ),
+      serial: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}serial'],
+      ),
+      merchantWarrantyStart: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}merchant_warranty_start'],
+      ),
+      merchantWarrantyEnd: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}merchant_warranty_end'],
+      ),
     );
   }
 
@@ -748,6 +818,19 @@ class Item extends DataClass implements Insertable<Item> {
 
   /// 保修到期日。只在「在保」时有值。
   final DateTime? warrantyEnd;
+
+  /// 序列号文本。非必填、不唯一。
+  ///
+  /// 与 `attachments.role = 'serial'` 的铭牌照片并存：照片是证据，
+  /// 文本是可查、可印在保修卡上的凭据。不建唯一索引——同一串号会被
+  /// 先录错后修正，拆机件也可能重号，唯一约束只会把用户卡在保存上。
+  final String? serial;
+
+  /// 商家保修开始日（本店承诺的区间起点）。
+  final DateTime? merchantWarrantyStart;
+
+  /// 商家保修到期日。与开始日一起构成给买家的承诺区间。
+  final DateTime? merchantWarrantyEnd;
   const Item({
     required this.id,
     required this.title,
@@ -777,6 +860,9 @@ class Item extends DataClass implements Insertable<Item> {
     required this.warrantyStatus,
     this.warrantyStart,
     this.warrantyEnd,
+    this.serial,
+    this.merchantWarrantyStart,
+    this.merchantWarrantyEnd,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -857,6 +943,17 @@ class Item extends DataClass implements Insertable<Item> {
     if (!nullToAbsent || warrantyEnd != null) {
       map['warranty_end'] = Variable<DateTime>(warrantyEnd);
     }
+    if (!nullToAbsent || serial != null) {
+      map['serial'] = Variable<String>(serial);
+    }
+    if (!nullToAbsent || merchantWarrantyStart != null) {
+      map['merchant_warranty_start'] = Variable<DateTime>(
+        merchantWarrantyStart,
+      );
+    }
+    if (!nullToAbsent || merchantWarrantyEnd != null) {
+      map['merchant_warranty_end'] = Variable<DateTime>(merchantWarrantyEnd);
+    }
     return map;
   }
 
@@ -928,6 +1025,15 @@ class Item extends DataClass implements Insertable<Item> {
       warrantyEnd: warrantyEnd == null && nullToAbsent
           ? const Value.absent()
           : Value(warrantyEnd),
+      serial: serial == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serial),
+      merchantWarrantyStart: merchantWarrantyStart == null && nullToAbsent
+          ? const Value.absent()
+          : Value(merchantWarrantyStart),
+      merchantWarrantyEnd: merchantWarrantyEnd == null && nullToAbsent
+          ? const Value.absent()
+          : Value(merchantWarrantyEnd),
     );
   }
 
@@ -967,6 +1073,13 @@ class Item extends DataClass implements Insertable<Item> {
       ),
       warrantyStart: serializer.fromJson<DateTime?>(json['warrantyStart']),
       warrantyEnd: serializer.fromJson<DateTime?>(json['warrantyEnd']),
+      serial: serializer.fromJson<String?>(json['serial']),
+      merchantWarrantyStart: serializer.fromJson<DateTime?>(
+        json['merchantWarrantyStart'],
+      ),
+      merchantWarrantyEnd: serializer.fromJson<DateTime?>(
+        json['merchantWarrantyEnd'],
+      ),
     );
   }
   @override
@@ -1001,6 +1114,11 @@ class Item extends DataClass implements Insertable<Item> {
       'warrantyStatus': serializer.toJson<WarrantyStatus>(warrantyStatus),
       'warrantyStart': serializer.toJson<DateTime?>(warrantyStart),
       'warrantyEnd': serializer.toJson<DateTime?>(warrantyEnd),
+      'serial': serializer.toJson<String?>(serial),
+      'merchantWarrantyStart': serializer.toJson<DateTime?>(
+        merchantWarrantyStart,
+      ),
+      'merchantWarrantyEnd': serializer.toJson<DateTime?>(merchantWarrantyEnd),
     };
   }
 
@@ -1033,6 +1151,9 @@ class Item extends DataClass implements Insertable<Item> {
     WarrantyStatus? warrantyStatus,
     Value<DateTime?> warrantyStart = const Value.absent(),
     Value<DateTime?> warrantyEnd = const Value.absent(),
+    Value<String?> serial = const Value.absent(),
+    Value<DateTime?> merchantWarrantyStart = const Value.absent(),
+    Value<DateTime?> merchantWarrantyEnd = const Value.absent(),
   }) => Item(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -1076,6 +1197,13 @@ class Item extends DataClass implements Insertable<Item> {
         ? warrantyStart.value
         : this.warrantyStart,
     warrantyEnd: warrantyEnd.present ? warrantyEnd.value : this.warrantyEnd,
+    serial: serial.present ? serial.value : this.serial,
+    merchantWarrantyStart: merchantWarrantyStart.present
+        ? merchantWarrantyStart.value
+        : this.merchantWarrantyStart,
+    merchantWarrantyEnd: merchantWarrantyEnd.present
+        ? merchantWarrantyEnd.value
+        : this.merchantWarrantyEnd,
   );
   Item copyWithCompanion(ItemsCompanion data) {
     return Item(
@@ -1131,6 +1259,13 @@ class Item extends DataClass implements Insertable<Item> {
       warrantyEnd: data.warrantyEnd.present
           ? data.warrantyEnd.value
           : this.warrantyEnd,
+      serial: data.serial.present ? data.serial.value : this.serial,
+      merchantWarrantyStart: data.merchantWarrantyStart.present
+          ? data.merchantWarrantyStart.value
+          : this.merchantWarrantyStart,
+      merchantWarrantyEnd: data.merchantWarrantyEnd.present
+          ? data.merchantWarrantyEnd.value
+          : this.merchantWarrantyEnd,
     );
   }
 
@@ -1164,7 +1299,10 @@ class Item extends DataClass implements Insertable<Item> {
           ..write('tradeInCents: $tradeInCents, ')
           ..write('warrantyStatus: $warrantyStatus, ')
           ..write('warrantyStart: $warrantyStart, ')
-          ..write('warrantyEnd: $warrantyEnd')
+          ..write('warrantyEnd: $warrantyEnd, ')
+          ..write('serial: $serial, ')
+          ..write('merchantWarrantyStart: $merchantWarrantyStart, ')
+          ..write('merchantWarrantyEnd: $merchantWarrantyEnd')
           ..write(')'))
         .toString();
   }
@@ -1199,6 +1337,9 @@ class Item extends DataClass implements Insertable<Item> {
     warrantyStatus,
     warrantyStart,
     warrantyEnd,
+    serial,
+    merchantWarrantyStart,
+    merchantWarrantyEnd,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -1231,7 +1372,10 @@ class Item extends DataClass implements Insertable<Item> {
           other.tradeInCents == this.tradeInCents &&
           other.warrantyStatus == this.warrantyStatus &&
           other.warrantyStart == this.warrantyStart &&
-          other.warrantyEnd == this.warrantyEnd);
+          other.warrantyEnd == this.warrantyEnd &&
+          other.serial == this.serial &&
+          other.merchantWarrantyStart == this.merchantWarrantyStart &&
+          other.merchantWarrantyEnd == this.merchantWarrantyEnd);
 }
 
 class ItemsCompanion extends UpdateCompanion<Item> {
@@ -1263,6 +1407,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
   final Value<WarrantyStatus> warrantyStatus;
   final Value<DateTime?> warrantyStart;
   final Value<DateTime?> warrantyEnd;
+  final Value<String?> serial;
+  final Value<DateTime?> merchantWarrantyStart;
+  final Value<DateTime?> merchantWarrantyEnd;
   final Value<int> rowid;
   const ItemsCompanion({
     this.id = const Value.absent(),
@@ -1293,6 +1440,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
     this.warrantyStatus = const Value.absent(),
     this.warrantyStart = const Value.absent(),
     this.warrantyEnd = const Value.absent(),
+    this.serial = const Value.absent(),
+    this.merchantWarrantyStart = const Value.absent(),
+    this.merchantWarrantyEnd = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ItemsCompanion.insert({
@@ -1324,6 +1474,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
     this.warrantyStatus = const Value.absent(),
     this.warrantyStart = const Value.absent(),
     this.warrantyEnd = const Value.absent(),
+    this.serial = const Value.absent(),
+    this.merchantWarrantyStart = const Value.absent(),
+    this.merchantWarrantyEnd = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        title = Value(title),
@@ -1360,6 +1513,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
     Expression<String>? warrantyStatus,
     Expression<DateTime>? warrantyStart,
     Expression<DateTime>? warrantyEnd,
+    Expression<String>? serial,
+    Expression<DateTime>? merchantWarrantyStart,
+    Expression<DateTime>? merchantWarrantyEnd,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1391,6 +1547,11 @@ class ItemsCompanion extends UpdateCompanion<Item> {
       if (warrantyStatus != null) 'warranty_status': warrantyStatus,
       if (warrantyStart != null) 'warranty_start': warrantyStart,
       if (warrantyEnd != null) 'warranty_end': warrantyEnd,
+      if (serial != null) 'serial': serial,
+      if (merchantWarrantyStart != null)
+        'merchant_warranty_start': merchantWarrantyStart,
+      if (merchantWarrantyEnd != null)
+        'merchant_warranty_end': merchantWarrantyEnd,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1424,6 +1585,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
     Value<WarrantyStatus>? warrantyStatus,
     Value<DateTime?>? warrantyStart,
     Value<DateTime?>? warrantyEnd,
+    Value<String?>? serial,
+    Value<DateTime?>? merchantWarrantyStart,
+    Value<DateTime?>? merchantWarrantyEnd,
     Value<int>? rowid,
   }) {
     return ItemsCompanion(
@@ -1455,6 +1619,10 @@ class ItemsCompanion extends UpdateCompanion<Item> {
       warrantyStatus: warrantyStatus ?? this.warrantyStatus,
       warrantyStart: warrantyStart ?? this.warrantyStart,
       warrantyEnd: warrantyEnd ?? this.warrantyEnd,
+      serial: serial ?? this.serial,
+      merchantWarrantyStart:
+          merchantWarrantyStart ?? this.merchantWarrantyStart,
+      merchantWarrantyEnd: merchantWarrantyEnd ?? this.merchantWarrantyEnd,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1550,6 +1718,19 @@ class ItemsCompanion extends UpdateCompanion<Item> {
     if (warrantyEnd.present) {
       map['warranty_end'] = Variable<DateTime>(warrantyEnd.value);
     }
+    if (serial.present) {
+      map['serial'] = Variable<String>(serial.value);
+    }
+    if (merchantWarrantyStart.present) {
+      map['merchant_warranty_start'] = Variable<DateTime>(
+        merchantWarrantyStart.value,
+      );
+    }
+    if (merchantWarrantyEnd.present) {
+      map['merchant_warranty_end'] = Variable<DateTime>(
+        merchantWarrantyEnd.value,
+      );
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1587,6 +1768,9 @@ class ItemsCompanion extends UpdateCompanion<Item> {
           ..write('warrantyStatus: $warrantyStatus, ')
           ..write('warrantyStart: $warrantyStart, ')
           ..write('warrantyEnd: $warrantyEnd, ')
+          ..write('serial: $serial, ')
+          ..write('merchantWarrantyStart: $merchantWarrantyStart, ')
+          ..write('merchantWarrantyEnd: $merchantWarrantyEnd, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5165,6 +5349,9 @@ typedef $$ItemsTableCreateCompanionBuilder =
       Value<WarrantyStatus> warrantyStatus,
       Value<DateTime?> warrantyStart,
       Value<DateTime?> warrantyEnd,
+      Value<String?> serial,
+      Value<DateTime?> merchantWarrantyStart,
+      Value<DateTime?> merchantWarrantyEnd,
       Value<int> rowid,
     });
 typedef $$ItemsTableUpdateCompanionBuilder =
@@ -5197,6 +5384,9 @@ typedef $$ItemsTableUpdateCompanionBuilder =
       Value<WarrantyStatus> warrantyStatus,
       Value<DateTime?> warrantyStart,
       Value<DateTime?> warrantyEnd,
+      Value<String?> serial,
+      Value<DateTime?> merchantWarrantyStart,
+      Value<DateTime?> merchantWarrantyEnd,
       Value<int> rowid,
     });
 
@@ -5349,6 +5539,21 @@ class $$ItemsTableFilterComposer extends Composer<_$AppDatabase, $ItemsTable> {
     column: $table.warrantyEnd,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<String> get serial => $composableBuilder(
+    column: $table.serial,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get merchantWarrantyStart => $composableBuilder(
+    column: $table.merchantWarrantyStart,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get merchantWarrantyEnd => $composableBuilder(
+    column: $table.merchantWarrantyEnd,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$ItemsTableOrderingComposer
@@ -5499,6 +5704,21 @@ class $$ItemsTableOrderingComposer
     column: $table.warrantyEnd,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get serial => $composableBuilder(
+    column: $table.serial,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get merchantWarrantyStart => $composableBuilder(
+    column: $table.merchantWarrantyStart,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get merchantWarrantyEnd => $composableBuilder(
+    column: $table.merchantWarrantyEnd,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ItemsTableAnnotationComposer
@@ -5618,6 +5838,19 @@ class $$ItemsTableAnnotationComposer
     column: $table.warrantyEnd,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get serial =>
+      $composableBuilder(column: $table.serial, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get merchantWarrantyStart => $composableBuilder(
+    column: $table.merchantWarrantyStart,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get merchantWarrantyEnd => $composableBuilder(
+    column: $table.merchantWarrantyEnd,
+    builder: (column) => column,
+  );
 }
 
 class $$ItemsTableTableManager
@@ -5676,6 +5909,9 @@ class $$ItemsTableTableManager
                 Value<WarrantyStatus> warrantyStatus = const Value.absent(),
                 Value<DateTime?> warrantyStart = const Value.absent(),
                 Value<DateTime?> warrantyEnd = const Value.absent(),
+                Value<String?> serial = const Value.absent(),
+                Value<DateTime?> merchantWarrantyStart = const Value.absent(),
+                Value<DateTime?> merchantWarrantyEnd = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemsCompanion(
                 id: id,
@@ -5706,6 +5942,9 @@ class $$ItemsTableTableManager
                 warrantyStatus: warrantyStatus,
                 warrantyStart: warrantyStart,
                 warrantyEnd: warrantyEnd,
+                serial: serial,
+                merchantWarrantyStart: merchantWarrantyStart,
+                merchantWarrantyEnd: merchantWarrantyEnd,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5738,6 +5977,9 @@ class $$ItemsTableTableManager
                 Value<WarrantyStatus> warrantyStatus = const Value.absent(),
                 Value<DateTime?> warrantyStart = const Value.absent(),
                 Value<DateTime?> warrantyEnd = const Value.absent(),
+                Value<String?> serial = const Value.absent(),
+                Value<DateTime?> merchantWarrantyStart = const Value.absent(),
+                Value<DateTime?> merchantWarrantyEnd = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemsCompanion.insert(
                 id: id,
@@ -5768,6 +6010,9 @@ class $$ItemsTableTableManager
                 warrantyStatus: warrantyStatus,
                 warrantyStart: warrantyStart,
                 warrantyEnd: warrantyEnd,
+                serial: serial,
+                merchantWarrantyStart: merchantWarrantyStart,
+                merchantWarrantyEnd: merchantWarrantyEnd,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

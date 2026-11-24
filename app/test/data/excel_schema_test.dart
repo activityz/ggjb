@@ -4,8 +4,8 @@ import 'package:ggjb/domain/enums.dart';
 
 void main() {
   group('ExcelSchema 表头', () {
-    test('商品表 25 列且没有重复列名', () {
-      expect(ExcelSchema.itemHeaders.length, 25);
+    test('商品表 31 列且没有重复列名', () {
+      expect(ExcelSchema.itemHeaders.length, 31);
       expect(
         ExcelSchema.itemHeaders.toSet().length,
         ExcelSchema.itemHeaders.length,

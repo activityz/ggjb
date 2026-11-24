@@ -199,7 +199,24 @@ class ExcelImportService {
         continue;
       }
 
-      // 保修：缺列或空值 = 无保修（老表就是这种情况，不该报错）。
+      // 序列号与商家保修：缺列或空值都当没填，不报错。商家保修在这里
+      // 不做「卖出必填」校验——导入是历史数据迁移，旧文件根本没有这两列，
+      // 一旦强制必填，所有旧表都导不进来（见 design D5）。
+      final serial = _nullIfEmpty(_cell(row, itemIndex[ExcelSchema.serial]));
+      final merchantStart = _parseDate(
+        _cell(row, itemIndex[ExcelSchema.merchantWarrantyStart]),
+        errors,
+        excelRow,
+        ExcelSchema.merchantWarrantyStart,
+      );
+      final merchantEnd = _parseDate(
+        _cell(row, itemIndex[ExcelSchema.merchantWarrantyEnd]),
+        errors,
+        excelRow,
+        ExcelSchema.merchantWarrantyEnd,
+      );
+
+      // 厂家保修：缺列或空值 = 无保修（老表就是这种情况，不该报错）。
       // 认不出的词报错而不是当「无保修」——那会把一台在保机器静默抹成无保修。
       final rawWarranty =
           _cell(row, itemIndex[ExcelSchema.warrantyStatus]).trim();
@@ -292,6 +309,9 @@ class ExcelImportService {
             excelRow,
             ExcelSchema.tradeIn,
           ),
+          serial: serial,
+          merchantWarrantyStart: merchantStart,
+          merchantWarrantyEnd: merchantEnd,
           warrantyStatus: warranty,
           warrantyStart: warrantyStart,
           warrantyEnd: warrantyEnd,
@@ -489,7 +509,10 @@ class ExcelImportService {
     for (var c = 0; c < header.length; c++) {
       final name = _cell(header, c).trim();
       if (name.isEmpty) continue;
-      map.putIfAbsent(name, () => c);
+      // 旧表头按别名换成新列名：上一版导出的文件里保修三列叫「保修状态」
+      // 这类旧名字，不映射就等于悄悄丢了厂家保修。
+      final canonical = ExcelSchema.legacyHeaderAliases[name] ?? name;
+      map.putIfAbsent(canonical, () => c);
     }
     // 容错：表头里多出的列不影响，缺的列靠 expected 里的名字兜底。
     for (final name in expected) {

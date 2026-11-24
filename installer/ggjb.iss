@@ -1,4 +1,4 @@
-﻿; 搞个机吧 —— Windows 安装包脚本（Inno Setup 6）
+; 搞个机吧 —— Windows 安装包脚本（Inno Setup 6）
 ;
 ; 编译：
 ;   "C:\Users\25852\AppData\Local\Programs\Inno Setup 6\ISCC.exe" installer\ggjb.iss
@@ -13,7 +13,7 @@
 #define AppName "搞个机吧"
 ; 版本号跟 app/pubspec.yaml 的 version 保持一致（发版前对一下，别只改一边）。
 ; 产物名就是靠它拼的，写错了 dist 里会出现两个版本号不同的安装包。
-#define AppVersion "1.9.0"
+#define AppVersion "1.10.0"
 #define AppExe "ggjb.exe"
 #define AppSource "..\dist\ggjb-windows-x64"
 

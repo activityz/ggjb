@@ -99,7 +99,19 @@ class ExcelExportService {
         item.batteryHealth == null ? null : IntCellValue(item.batteryHealth!),
         item.listPriceCents == null ? null : _money(item.listPriceCents!),
         item.tradeInCents == null ? null : _money(item.tradeInCents!),
-        // 保修：状态总是写（旧库里默认 none，写出来就是「无保修」），
+        _text(item.serial),
+        // 商家保修：本店给买家的承诺区间，卖出后才会有值。
+        _text(
+          item.merchantWarrantyStart == null
+              ? null
+              : _date.format(item.merchantWarrantyStart!),
+        ),
+        _text(
+          item.merchantWarrantyEnd == null
+              ? null
+              : _date.format(item.merchantWarrantyEnd!),
+        ),
+        // 厂家保修：状态总是写（旧库里默认 none，写出来就是「无保修」），
         // 日期只在「在保」时写 —— 其他状态下库里的日期本来就应该为空。
         TextCellValue(ExcelSchema.warrantyLabel(item.warrantyStatus)),
         _text(

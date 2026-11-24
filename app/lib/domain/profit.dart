@@ -95,6 +95,8 @@ class ProfitSummary {
     required this.unsettledProfitCents,
     required this.tradeInTotalCents,
     required this.closedLossCents,
+    required this.soldLossCents,
+    required this.lossCount,
     required this.capitalOccupiedCents,
     required this.pendingReceivableCents,
     required this.soldCount,
@@ -109,6 +111,8 @@ class ProfitSummary {
     unsettledProfitCents: 0,
     tradeInTotalCents: 0,
     closedLossCents: 0,
+    soldLossCents: 0,
+    lossCount: 0,
     capitalOccupiedCents: 0,
     pendingReceivableCents: 0,
     soldCount: 0,
@@ -132,8 +136,18 @@ class ProfitSummary {
   /// 置换抵扣合计（分）。只做记录，不进任何利润字段。
   final int tradeInTotalCents;
 
-  /// 退货 + 报废造成的亏损合计，恒为 ≤ 0。
+  /// **亏损合计**：所有单笔利润为负的单子之和，恒为 ≤ 0。
+  ///
+  /// 涵盖贱卖（已卖出/已到账里卖价低于成本）、退货与报废三种来源。
+  /// 与之对应，[settledProfitCents] / [unsettledProfitCents] 只统计盈利单——
+  /// 分栏变了，但两栏相加仍是同一个净额。
   final int closedLossCents;
+
+  /// 已卖出/已到账里的亏损合计（贱卖），恒为 ≤ 0。
+  ///
+  /// 单独留一份是为了算利润率：分子要用「已售净额」，而 [closedLossCents]
+  /// 里还混着退货报废的亏损，那些单的成本不在已售成本分母里。
+  final int soldLossCents;
 
   /// 在库 + 已上架的资金占用，恒为 ≥ 0。
   final int capitalOccupiedCents;
@@ -150,7 +164,15 @@ class ProfitSummary {
   /// 其中货款还没到手的单数。
   final int receivableCount;
 
+  /// 退货 + 报废的单数（不含贱卖）。
+  ///
+  /// 与 [soldCount] 相加得到 [closedCount]，所以这里 MUST NOT 把贱卖算进来，
+  /// 否则同一笔贱卖单会被数两遍。
   final int lossClosedCount;
+
+  /// 所有亏钱的单数（贱卖 + 退货 + 报废）。看板「N 单亏钱」用它。
+  final int lossCount;
+
   final int activeCount;
 
   /// **总利润** = 已实现利润 + 了结亏损（退货报废也一起算进去）。
@@ -163,13 +185,21 @@ class ProfitSummary {
   /// 了结总单数（售出 + 退货 + 报废）。
   int get closedCount => soldCount + lossClosedCount;
 
-  /// 平均每笔已实现利润；没有售出记录时为 null。
-  int? get averageRealizedCents =>
-      soldCount == 0 ? null : realizedProfitCents ~/ soldCount;
+  /// 平均每笔已实现净额（盈利减去贱卖亏损）。
+  ///
+  /// 分母是已卖出总数，含亏钱的单——只拿赚钱那几笔去做平均，
+  /// 得到的数看着好看，但对「这批货平均每单挣多少」没有意义。
+  int? get averageRealizedCents => soldCount == 0
+      ? null
+      : (realizedProfitCents + soldLossCents) ~/ soldCount;
 
-  /// 已实现利润率：利润 / 这些已售商品的成本。
-  double? realizedMarginRate(int realizedCostCents) =>
-      realizedCostCents == 0 ? null : realizedProfitCents / realizedCostCents;
+  /// 已实现利润率：已售净额 / 这些已售商品的成本。
+  ///
+  /// 分子必须带上贱卖亏损：只拿盈利单去除，等于假设每笔都赚钱。
+  /// 分母不因为某单被归进亏损栏就把它的成本剔除。
+  double? realizedMarginRate(int realizedCostCents) => realizedCostCents == 0
+      ? null
+      : (realizedProfitCents + soldLossCents) / realizedCostCents;
 
   ProfitSummary merge(ProfitSummary other) => ProfitSummary(
     realizedProfitCents: realizedProfitCents + other.realizedProfitCents,
@@ -177,6 +207,8 @@ class ProfitSummary {
     unsettledProfitCents: unsettledProfitCents + other.unsettledProfitCents,
     tradeInTotalCents: tradeInTotalCents + other.tradeInTotalCents,
     closedLossCents: closedLossCents + other.closedLossCents,
+    soldLossCents: soldLossCents + other.soldLossCents,
+    lossCount: lossCount + other.lossCount,
     capitalOccupiedCents: capitalOccupiedCents + other.capitalOccupiedCents,
     pendingReceivableCents:
         pendingReceivableCents + other.pendingReceivableCents,
@@ -195,6 +227,8 @@ class ProfitSummary {
           unsettledProfitCents == other.unsettledProfitCents &&
           tradeInTotalCents == other.tradeInTotalCents &&
           closedLossCents == other.closedLossCents &&
+          soldLossCents == other.soldLossCents &&
+          lossCount == other.lossCount &&
           capitalOccupiedCents == other.capitalOccupiedCents &&
           pendingReceivableCents == other.pendingReceivableCents &&
           soldCount == other.soldCount &&
@@ -209,6 +243,8 @@ class ProfitSummary {
     unsettledProfitCents,
     tradeInTotalCents,
     closedLossCents,
+    soldLossCents,
+    lossCount,
     capitalOccupiedCents,
     pendingReceivableCents,
     soldCount,
@@ -235,6 +271,8 @@ class ProfitCalculator {
     var soldCount = 0;
     var receivableCount = 0;
     var lossCount = 0;
+    var lossClosedCount = 0;
+    var soldLoss = 0;
     var activeCount = 0;
     var realizedCost = 0;
     var tradeIn = 0;
@@ -242,23 +280,42 @@ class ProfitCalculator {
     for (final line in lines) {
       // 置换抵扣跟状态无关，一律累加到「已记录但未实现」那一栏。
       tradeIn += line.tradeInCents;
+
+      final profit = line.profitCents ?? 0;
+      // 分栏只看这笔单赚没赚钱，不看状态：亏钱的一律进亏损栏，
+      // 赚钱的才进利润栏。两栏相加仍是同一个净额。
+      final isLoss = profit < 0;
+
       switch (line.status) {
         case ItemStatus.sold:
           // 货走了钱没到：利润算「未到手」，货款全额另外挂到待收款上。
-          unsettled += line.profitCents ?? 0;
+          if (isLoss) {
+            loss += profit;
+            soldLoss += profit;
+            lossCount++;
+          } else {
+            unsettled += profit;
+          }
           realizedCost += line.totalCostCents;
           soldCount++;
           pendingReceivable += line.sellPriceCents ?? 0;
           receivableCount++;
         case ItemStatus.completed:
           // 钱已到手，不再构成待收款。
-          settled += line.profitCents ?? 0;
+          if (isLoss) {
+            loss += profit;
+            soldLoss += profit;
+            lossCount++;
+          } else {
+            settled += profit;
+          }
           realizedCost += line.totalCostCents;
           soldCount++;
         case ItemStatus.returned:
         case ItemStatus.scrapped:
-          loss += line.profitCents ?? 0;
+          loss += profit;
           lossCount++;
+          lossClosedCount++;
         case ItemStatus.inStock:
         case ItemStatus.listed:
           occupied += line.capitalOccupiedCents;
@@ -273,11 +330,13 @@ class ProfitCalculator {
         unsettledProfitCents: unsettled,
         tradeInTotalCents: tradeIn,
         closedLossCents: loss,
+        soldLossCents: soldLoss,
+        lossCount: lossCount,
         capitalOccupiedCents: occupied,
         pendingReceivableCents: pendingReceivable,
         soldCount: soldCount,
         receivableCount: receivableCount,
-        lossClosedCount: lossCount,
+        lossClosedCount: lossClosedCount,
         activeCount: activeCount,
       ),
       realizedCostCents: realizedCost,

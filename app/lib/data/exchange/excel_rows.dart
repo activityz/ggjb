@@ -44,14 +44,37 @@ class ExcelSchema {
   /// 置换时买家旧机折的价。只记录，不进利润。
   static const String tradeIn = '旧机抵扣';
 
-  /// 保修状态（无保修 / 在保 / 已过保）。
-  static const String warrantyStatus = '保修状态';
+  /// 序列号文本。非必填，导出留空就是没有。
+  static const String serial = '序列号';
 
-  /// 保修开始日。只在「在保」时有意义。
-  static const String warrantyStart = '保修开始';
+  /// 商家保修（本店对买家承诺）开始日。
+  static const String merchantWarrantyStart = '商家保修开始';
 
-  /// 保修到期日。只在「在保」时有意义。
-  static const String warrantyEnd = '保修到期';
+  /// 商家保修到期日。
+  static const String merchantWarrantyEnd = '商家保修到期';
+
+  /// 厂家保修状态（无保修 / 在保 / 已过保）。
+  ///
+  /// 表头带「厂家」两个字：同一张表里现在还有「商家保修开始 / 到期」，
+  /// 不区分就分不清这一列是哪一套保修。库内列名仍是 `warranty_status`。
+  static const String warrantyStatus = '厂家保修状态';
+
+  /// 厂家保修开始日。只在「在保」时有意义。
+  static const String warrantyStart = '厂家保修开始';
+
+  /// 厂家保修到期日。只在「在保」时有意义。
+  static const String warrantyEnd = '厂家保修到期';
+
+  /// 旧表头 → 新表头。
+  ///
+  /// 上一版导出的文件里这三列叫旧名字，散在用户电脑上。升级一次就让它们
+  /// 导不进来等于把历史数据锁死，所以导入时按这张表把旧名映射回新列；
+  /// 导出只写新名。
+  static const Map<String, String> legacyHeaderAliases = <String, String>{
+    '保修状态': warrantyStatus,
+    '保修开始': warrantyStart,
+    '保修到期': warrantyEnd,
+  };
 
   static const String expenseTotal = '费用合计';
   static const String totalCost = '总投入';
@@ -82,6 +105,9 @@ class ExcelSchema {
     batteryHealth,
     listPrice,
     tradeIn,
+    serial,
+    merchantWarrantyStart,
+    merchantWarrantyEnd,
     warrantyStatus,
     warrantyStart,
     warrantyEnd,

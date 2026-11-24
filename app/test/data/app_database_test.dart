@@ -35,8 +35,8 @@ void main() {
     return rows.map((r) => r.data['label']! as String).toList();
   }
 
-  test('schemaVersion 是 6', () {
-    expect(db.schemaVersion, 6);
+  test('schemaVersion 是 7', () {
+    expect(db.schemaVersion, 7);
   });
 
   test('七张业务表都建出来了', () async {
@@ -124,7 +124,7 @@ void main() {
     );
   });
 
-  test('v5 旧库升级：三列补在末尾，旧行读出来是无保修', () async {
+  test('v5 旧库升级到 v7：六列补在末尾，旧行读出来是无保修', () async {
     // 真拿一个 user_version = 5 的旧文件来开：造一个只有旧列的表，
     // 再让 AppDatabase 走 onUpgrade 分支。
     final dir = await Directory.systemTemp.createTemp('ggjb_mig_');
@@ -149,9 +149,18 @@ void main() {
 
     final legacy = sqlite3.open(file.path);
     legacy.execute(ddl);
-    legacy.execute('ALTER TABLE items DROP COLUMN warranty_status');
-    legacy.execute('ALTER TABLE items DROP COLUMN warranty_start');
-    legacy.execute('ALTER TABLE items DROP COLUMN warranty_end');
+    // 退回到 v5：v6（厂家保修三列）与 v7（序列号 + 商家保修两列）都要摘掉。
+    // 逆序摘，避免边删边改列序。
+    for (final column in const [
+      'merchant_warranty_end',
+      'merchant_warranty_start',
+      'serial',
+      'warranty_end',
+      'warranty_start',
+      'warranty_status',
+    ]) {
+      legacy.execute('ALTER TABLE items DROP COLUMN $column');
+    }
     legacy.execute(
       'INSERT INTO items (id, title, brand, note, status, buy_date, '
       'buy_price_cents, sell_price_cents, battery_health, trade_in_cents, '
@@ -169,6 +178,9 @@ void main() {
     expect(row.warrantyStatus, WarrantyStatus.none, reason: '旧行不能凭空变成在保');
     expect(row.warrantyStart, isNull);
     expect(row.warrantyEnd, isNull);
+    expect(row.serial, isNull, reason: '升级不能凭空编一个序列号');
+    expect(row.merchantWarrantyStart, isNull);
+    expect(row.merchantWarrantyEnd, isNull);
 
     // 升级不能动旧数据：同一个接口把旧字段逐个读回来对一遍，
     // 只看保修三列会漏掉「ADD COLUMN 把表重建了」这类事故。
@@ -187,8 +199,15 @@ void main() {
         .get();
     final names = columns.map((r) => r.data['name']! as String).toList();
     expect(
-      names.sublist(names.length - 3),
-      ['warranty_status', 'warranty_start', 'warranty_end'],
+      names.sublist(names.length - 6),
+      [
+        'warranty_status',
+        'warranty_start',
+        'warranty_end',
+        'serial',
+        'merchant_warranty_start',
+        'merchant_warranty_end',
+      ],
     );
 
     // 升级出来的表结构与全新建库逐字相同（含 NOT NULL 与 DEFAULT），
@@ -201,6 +220,52 @@ void main() {
                 .getSingle())
             .data['sql']! as String;
     expect(upgradedSql, ddl);
+  });
+
+  test('v6 旧库升到 v7：三新列为空，厂家保修原值不动', () async {
+    final dir = await Directory.systemTemp.createTemp('ggjb_v7_');
+    addTearDown(() async {
+      try {
+        await dir.delete(recursive: true);
+      } on FileSystemException {
+        // 删不掉不影响断言。
+      }
+    });
+    final file = File('${dir.path}/v6.sqlite');
+
+    final ddl =
+        (await db
+                .customSelect(
+                  "SELECT sql FROM sqlite_master WHERE name = 'items'",
+                )
+                .getSingle())
+            .data['sql']! as String;
+
+    final legacy = sqlite3.open(file.path);
+    legacy.execute(ddl);
+    // 只摘 v7 的三列：模拟 1.9.0（schemaVersion 6）的真实库。
+    legacy.execute('ALTER TABLE items DROP COLUMN merchant_warranty_end');
+    legacy.execute('ALTER TABLE items DROP COLUMN merchant_warranty_start');
+    legacy.execute('ALTER TABLE items DROP COLUMN serial');
+    legacy.execute(
+      'INSERT INTO items (id, title, status, buy_price_cents, '
+      'sell_price_cents, warranty_status, warranty_start, warranty_end, '
+      'created_at, updated_at, device_id) VALUES ('
+      "'v6-1', '上一版机器', 'sold', 200000, 260000, 'active', "
+      "1740787200, 1772323200, 0, 0, 'dev-v6')",
+    );
+    legacy.execute('PRAGMA user_version = 6');
+    legacy.dispose();
+
+    final upgraded = AppDatabase(NativeDatabase(file));
+    addTearDown(upgraded.close);
+
+    final row = (await upgraded.select(upgraded.items).get()).single;
+    expect(row.title, '上一版机器');
+    expect(row.warrantyStatus, WarrantyStatus.active, reason: '厂家保修不能被动');
+    expect(row.serial, isNull);
+    expect(row.merchantWarrantyStart, isNull, reason: '升级前卖出去的机器没人记过商家保修');
+    expect(row.merchantWarrantyEnd, isNull);
   });
 
   test('升级中断后重跑：已加的列不重复报错，剩下的补上', () async {
@@ -226,10 +291,11 @@ void main() {
 
     final legacy = sqlite3.open(file.path);
     legacy.execute(ddl);
-    // 只把三列里的第一列加回去，模拟「跑到第二个 addColumn 之前被kill」。
-    legacy.execute('ALTER TABLE items DROP COLUMN warranty_start');
-    legacy.execute('ALTER TABLE items DROP COLUMN warranty_end');
-    legacy.execute('PRAGMA user_version = 5');
+    // 模拟「v7 段落跑到第二个 addColumn 之前被 kill」：serial 已加，
+    // 商家保修两列还没加，版本号仍是 6。
+    legacy.execute('ALTER TABLE items DROP COLUMN merchant_warranty_start');
+    legacy.execute('ALTER TABLE items DROP COLUMN merchant_warranty_end');
+    legacy.execute('PRAGMA user_version = 6');
     legacy.dispose();
 
     final resumed = AppDatabase(NativeDatabase(file));
@@ -240,7 +306,7 @@ void main() {
         .toList();
     expect(
       names.sublist(names.length - 3),
-      ['warranty_status', 'warranty_start', 'warranty_end'],
+      ['serial', 'merchant_warranty_start', 'merchant_warranty_end'],
       reason: '重跑要把缺的两列补在末尾，不能重复加第一列',
     );
     // 结构又回到与新建库一致。

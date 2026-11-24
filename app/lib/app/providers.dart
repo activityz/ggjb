@@ -75,6 +75,7 @@ class ItemFilter {
     this.keyword = '',
     this.dateField,
     this.range = DateRange.all,
+    this.onlyLoss = false,
   });
 
   final ItemStatus? status;
@@ -93,6 +94,12 @@ class ItemFilter {
   /// 日期区间。两端都可能为空（只填一头也算筛）。
   final DateRange range;
 
+  /// 只看亏钱的单（单笔利润 < 0）。
+  ///
+  /// 由看板「了结亏损」下钻带入；列表页的筛选弹窗里没有这一项——
+  /// 它是派生条件（要跨商品与费用算利润），不是日常会主动切的状态维度。
+  final bool onlyLoss;
+
   /// 是否真的在按日期筛。UI 上用来显示「清除」按钮。
   bool get hasDateFilter => dateField != null && !range.isEmpty;
 
@@ -108,12 +115,14 @@ class ItemFilter {
     DateField? dateField,
     DateRange? range,
     bool clearDate = false,
+    bool? onlyLoss,
   }) => ItemFilter(
     status: clearStatus ? null : (status ?? this.status),
     statuses: clearStatuses ? null : (statuses ?? this.statuses),
     keyword: keyword ?? this.keyword,
     dateField: clearDate ? null : (dateField ?? this.dateField),
     range: clearDate ? DateRange.all : (range ?? this.range),
+    onlyLoss: onlyLoss ?? this.onlyLoss,
   );
 
   @override
@@ -123,11 +132,18 @@ class ItemFilter {
       other.keyword == keyword &&
       other.dateField == dateField &&
       other.range == range &&
+      other.onlyLoss == onlyLoss &&
       _sameStatuses(other.statuses, statuses);
 
   @override
-  int get hashCode =>
-      Object.hash(status, keyword, dateField, range, _statusesHash(statuses));
+  int get hashCode => Object.hash(
+    status,
+    keyword,
+    dateField,
+    range,
+    _statusesHash(statuses),
+    onlyLoss,
+  );
 }
 
 /// Set 的 == 走引用比较，family 会因此每次都重新订阅数据库。
@@ -150,7 +166,7 @@ final itemListProvider = StreamProvider.family<List<ItemListRow>, ItemFilter>((
   ref,
   filter,
 ) {
-  return ref
+  final stream = ref
       .watch(itemRepositoryProvider)
       .watchList(
         status: filter.status,
@@ -159,6 +175,15 @@ final itemListProvider = StreamProvider.family<List<ItemListRow>, ItemFilter>((
         dateField: filter.dateField,
         range: filter.range,
       );
+  if (!filter.onlyLoss) return stream;
+
+  // 亏损判据要跨商品表与费用表算单笔利润，SQL 里另写一套迟早会和
+  // ProfitLine 漂移，所以在这里按同一份口径过滤。
+  return stream.map(
+    (rows) => rows
+        .where((row) => (row.profitLine.profitCents ?? 0) < 0)
+        .toList(growable: false),
+  );
 });
 
 /// 看板的筛选条件：只看时间段。

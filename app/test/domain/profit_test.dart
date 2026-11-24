@@ -180,6 +180,83 @@ void main() {
       expect(m.realizedProfitCents, 600);
       expect(m.soldCount, 2);
     });
+
+    test('贱卖的单进亏损栏，不拉低利润栏', () {
+      final agg = ProfitCalculator.aggregate([
+        line(id: '1', status: ItemStatus.completed, buy: 1000, sell: 1400), // +400
+        line(id: '2', status: ItemStatus.completed, buy: 1000, sell: 800), // -200
+      ]);
+
+      expect(agg.summary.settledProfitCents, 400, reason: '利润栏只留赚钱的');
+      expect(agg.summary.closedLossCents, -200, reason: '亏的挪到亏损栏');
+      expect(agg.summary.soldLossCents, -200);
+      expect(agg.summary.realizedProfitCents, 400);
+      expect(agg.summary.totalProfitCents, 200, reason: '总利润仍是 400 - 200');
+      expect(agg.summary.lossCount, 1);
+      expect(
+        agg.summary.lossClosedCount,
+        0,
+        reason: '贱卖不是退货报废，这个计数不能涨',
+      );
+      expect(agg.summary.closedCount, 2, reason: '两单都只数一次');
+    });
+
+    test('四种状态的亏损都进了结亏损', () {
+      final agg = ProfitCalculator.aggregate([
+        line(id: '1', status: ItemStatus.sold, buy: 1000, sell: 800), // -200
+        line(id: '2', status: ItemStatus.returned, buy: 1000), // -1000
+        line(id: '3', status: ItemStatus.scrapped, buy: 500), // -500
+      ]);
+
+      expect(agg.summary.closedLossCents, -1700);
+      expect(agg.summary.lossCount, 3);
+      expect(agg.summary.lossClosedCount, 2, reason: '只有退货与报废');
+    });
+
+    test('利润栏加亏损栏等于逐单利润直接相加', () {
+      final lines = [
+        line(id: '1', status: ItemStatus.sold, buy: 1000, sell: 1500),
+        line(id: '2', status: ItemStatus.completed, buy: 1000, sell: 800),
+        line(id: '3', status: ItemStatus.returned, buy: 700),
+        line(id: '4', status: ItemStatus.scrapped, buy: 300, expense: 50),
+        line(id: '5', status: ItemStatus.inStock, buy: 900),
+      ];
+      final agg = ProfitCalculator.aggregate(lines);
+      final naive = lines.fold<int>(
+        0,
+        (sum, l) => sum + (l.profitCents ?? 0),
+      );
+
+      expect(
+        agg.summary.realizedProfitCents + agg.summary.closedLossCents,
+        naive,
+        reason: '改分栏不能改净额',
+      );
+    });
+
+    test('利润率分子用已售净额，分母用全部已售成本', () {
+      final agg = ProfitCalculator.aggregate([
+        line(id: '1', status: ItemStatus.completed, buy: 1000, sell: 1400),
+        line(id: '2', status: ItemStatus.completed, buy: 1000, sell: 800),
+      ]);
+
+      expect(agg.realizedCostCents, 2000);
+      expect(
+        agg.summary.realizedMarginRate(agg.realizedCostCents),
+        closeTo(0.10, 1e-9),
+        reason: '(400 - 200) / 2000',
+      );
+    });
+
+    test('不赚不亏的单不算亏损', () {
+      final agg = ProfitCalculator.aggregate([
+        line(id: '1', status: ItemStatus.sold, buy: 1000, sell: 1000),
+      ]);
+
+      expect(agg.summary.closedLossCents, 0);
+      expect(agg.summary.lossCount, 0);
+      expect(agg.summary.soldCount, 1);
+    });
   });
 
   group('已到账 completed', () {

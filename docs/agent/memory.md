@@ -73,6 +73,12 @@
   `cmd /c mklink /J "<hash目录>\gradle-8.14" "<已有目录>\gradle-8.14"` 做目录联接，再在 hash 目录里建空的
   `gradle-8.14-all.zip.ok`，wrapper 就认为已就绪、不再联网下载。
 
+- **卡里自带的 GestureDetector 会吃掉外层点击**：`app/lib/ui/glass_card.dart` 为了按压光斑**无条件**包了一层
+  `GestureDetector`（只挂 `onTapDown/onTapUp/onTapCancel`）。只要挂了这些回调它就会进手势竞技场，而它在卡片
+  内侧、比外层先赢，套在外面的 `GestureDetector` / `TapScale` 的 `onTap` **永远收不到** —— 看板五张指标卡因此
+  一直点不动，只是此前没人用手点过。现在无 `onTap/onLongPress` 时不装手势层；要证明「能点」必须用 `tester.tap`
+  走真实指针事件，**直接调用 `onTap!()` 的测试对这个故障完全瞎**。
+
 ## 5. 纪律
 
 - **构建必须经用户确认**：`flutter build apk` / `flutter build windows` 这类产出安装包的命令

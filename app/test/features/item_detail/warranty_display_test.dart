@@ -126,10 +126,10 @@ void main() {
     );
     await open(tester, 'w1');
 
-    await scrollTo(tester, find.text('保修开始'));
-    expect(find.text('保修开始'), findsOneWidget);
+    await scrollTo(tester, find.text('厂家保修开始'));
+    expect(find.text('厂家保修开始'), findsOneWidget);
     expect(find.text('2025-03-01'), findsOneWidget);
-    expect(find.text('保修到期'), findsOneWidget);
+    expect(find.text('厂家保修到期'), findsOneWidget);
     expect(find.text('2026-03-01'), findsOneWidget);
 
     await teardownTree(tester);
@@ -139,9 +139,9 @@ void main() {
     await put('w2', status: WarrantyStatus.active);
     await open(tester, 'w2');
 
-    await scrollTo(tester, find.text('保修开始'));
-    expect(find.text('保修开始'), findsOneWidget);
-    expect(find.text('保修到期'), findsOneWidget);
+    await scrollTo(tester, find.text('厂家保修开始'));
+    expect(find.text('厂家保修开始'), findsOneWidget);
+    expect(find.text('厂家保修到期'), findsOneWidget);
     expect(find.text('—'), findsWidgets);
 
     await teardownTree(tester);
@@ -158,7 +158,7 @@ void main() {
 
     await scrollTo(tester, find.text('已过保'));
     expect(find.text('已过保'), findsOneWidget);
-    expect(find.text('保修开始'), findsNothing);
+    expect(find.text('厂家保修开始'), findsNothing);
     expect(find.text('2024-01-01'), findsNothing);
 
     await teardownTree(tester);
@@ -171,7 +171,7 @@ void main() {
     await scrollTo(tester, find.text('买入成色'));
     expect(find.text('保修'), findsNothing);
     expect(find.text('无保修'), findsNothing);
-    expect(find.text('保修开始'), findsNothing);
+    expect(find.text('厂家保修开始'), findsNothing);
 
     await teardownTree(tester);
   });

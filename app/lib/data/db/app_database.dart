@@ -40,8 +40,11 @@ class AppDatabase extends _$AppDatabase {
   ///   `operating` 类别，并把「采货侠」「拍机堂」补进买入来源最前
   /// - v6 `items` 增加 `warranty_status`（无保修/在保/已过保，默认
   ///   `none`）、`warranty_start`、`warranty_end`；只在「在保」时写日期
+  /// - v7 `items` 增加 `serial`（序列号文本）与 `merchant_warranty_start` /
+  ///   `merchant_warranty_end`（**商家保修**起止）。v6 那三列的语义是
+  ///   **厂家保修**，两套信息互不覆盖
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -112,6 +115,15 @@ class AppDatabase extends _$AppDatabase {
             await _addColumnIfMissing(m, items, items.warrantyStatus);
             await _addColumnIfMissing(m, items, items.warrantyStart);
             await _addColumnIfMissing(m, items, items.warrantyEnd);
+          }
+          if (from < 7) {
+            // 序列号 + 商家保修。三列全 nullable，旧行升级后是 NULL = 没填；
+            // 升级前已经卖出去的机器没人记过商家保修，不做任何猜测性回填
+            // （补填入口在详情页，见 change merchant-warranty-card 的 D11）。
+            // 顺序必须与 tables.dart 声明顺序一致（列序参与同步兼容性校验）。
+            await _addColumnIfMissing(m, items, items.serial);
+            await _addColumnIfMissing(m, items, items.merchantWarrantyStart);
+            await _addColumnIfMissing(m, items, items.merchantWarrantyEnd);
           }
         },
         beforeOpen: (details) async {

@@ -19,11 +19,12 @@ import '../../ui/tap_scale.dart';
 import '../item_list/item_list_page.dart';
 import '../operating/operating_cost_page.dart';
 
-/// 看板上的数字／胶囊点开时用的跳转：带上标题和状态口径，push 一页明细。
+/// 看板上的数字／胶囊点开时用的跳转：带上标题和筛选口径，push 一页明细。
 typedef _OpenItems = void Function(
   String title, {
   ItemStatus? status,
   Set<ItemStatus>? statuses,
+  bool onlyLoss,
 });
 
 /// 看板：一眼看到「赚了多少、压了多少钱、还有多少没卖掉」。
@@ -209,6 +210,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     String title, {
     ItemStatus? status,
     Set<ItemStatus>? statuses,
+    bool onlyLoss = false,
   }) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -218,6 +220,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             initialFilter: ItemFilter(
               status: status,
               statuses: statuses,
+              onlyLoss: onlyLoss,
               dateField: _filter.range.isEmpty ? null : _filter.dateField,
               range: _filter.range,
             ),
@@ -348,7 +351,8 @@ class _DashboardBody extends StatelessWidget {
                 hint: '${summary.soldCount} 单已卖出',
                 color: context.palette.profit,
                 icon: Icons.account_balance_wallet_outlined,
-                footnote: '钱真的收到手才算这里，一般是你把状态改成「已完成」之后',
+                footnote: '钱真的收到手才算这里，一般是你把状态改成「已完成」之后；'
+                    '亏钱的单不在这里，看「了结亏损」',
                 onTap: () =>
                     onOpenItems('已到手利润', status: ItemStatus.completed),
               ),
@@ -358,7 +362,8 @@ class _DashboardBody extends StatelessWidget {
                 hint: '${summary.receivableCount} 单钱还没到',
                 color: context.palette.receivable,
                 icon: Icons.hourglass_bottom,
-                footnote: '货已经卖了、钱还在买家或平台手里。每单多少是按成交价算出来的，不是估的',
+                footnote: '货已经卖了、钱还在买家或平台手里。每单多少是按成交价算出来的，不是估的；'
+                    '亏钱的单不在这里，看「了结亏损」',
                 onTap: () => onOpenItems('未到手利润', status: ItemStatus.sold),
               ),
               _MetricCard(
@@ -373,10 +378,11 @@ class _DashboardBody extends StatelessWidget {
               _MetricCard(
                 title: '了结亏损',
                 value: Money(summary.closedLossCents).toYuanString(),
-                hint: '${summary.lossClosedCount} 单退货/报废',
+                hint: '${summary.lossCount} 单亏钱',
                 color: context.palette.loss,
                 icon: Icons.trending_down,
-                footnote: '货没换成钱，但买入价和运费已经花出去',
+                footnote: '贱卖的差价损失，加上退货/报废按「买入价 + 费用」全额计的亏',
+                onTap: () => onOpenItems('了结亏损', onlyLoss: true),
               ),
               _MetricCard(
                 title: '在途占用',
@@ -903,6 +909,9 @@ class _MetricCard extends StatelessWidget {
       blur: 12,
       padding: const EdgeInsets.all(16),
       tint: color,
+      // 点击交给 GlassCard 自己：它内层的手势层会赢下竞技场，套在外面的
+      // GestureDetector 收不到点击（五张卡曾因此全部点不动）。
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -928,6 +937,14 @@ class _MetricCard extends StatelessWidget {
                   ),
                 ),
               ),
+              // 带 onTap 的卡末尾放个箭头：和看板上的胶囊同一套暗示，
+              // 否则「整卡能点」这件事只有点过的人才知道。
+              if (onTap != null)
+                Icon(
+                  Icons.chevron_right,
+                  size: 16,
+                  color: color.withValues(alpha: 0.8),
+                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -958,12 +975,7 @@ class _MetricCard extends StatelessWidget {
         ],
       ),
     );
-    if (onTap == null) return card;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: card,
-    );
+    return card;
   }
 }
 

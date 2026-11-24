@@ -8,11 +8,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/palette.dart';
 import '../../app/providers.dart';
 import '../../app/theme.dart';
+import '../../data/dao/attachment_dao.dart';
 import '../../data/dao/item_dao.dart';
+import '../../data/db/app_database.dart';
 import '../../domain/date_period.dart';
 import '../../domain/dict_seeds.dart';
 import '../../domain/enums.dart';
 import '../../domain/image_pipeline.dart';
+import '../../domain/merchant_warranty.dart';
 import '../../domain/money.dart';
 import '../../ui/glass_card.dart';
 import '../../ui/gradient_text.dart';
@@ -20,6 +23,8 @@ import '../../ui/particles.dart';
 import '../barcode/qr_dialog.dart';
 import '../common/dict_field.dart';
 import '../item_edit/item_edit_page.dart';
+import '../warranty/warranty_card_dialog.dart';
+import '../warranty/warranty_card_service.dart';
 
 /// 商品详情：看盈亏、看图片、改状态。
 class ItemDetailPage extends ConsumerStatefulWidget {
@@ -322,10 +327,26 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
               // 保修：在保才给起止日；已过保只留状态一行；无保修不提（旧单据
               // 一律是 none，凭空多一行「无保修」只会让老记录看起来变脏了）。
               if (item.warrantyStatus == WarrantyStatus.active) ...[
-                _kv('保修开始', _dateText(item.warrantyStart)),
-                _kv('保修到期', _dateText(item.warrantyEnd)),
+                _kv('厂家保修开始', _dateText(item.warrantyStart)),
+                _kv('厂家保修到期', _dateText(item.warrantyEnd)),
               ] else if (item.warrantyStatus == WarrantyStatus.expired)
-                _kv('保修', '已过保'),
+                _kv('厂家保修', '已过保'),
+              // 商家保修：卖出后才有的一段承诺区间。老数据没填过就留一个
+              // 补填入口，而不是编一个日期或者干脆不显示。
+              if (item.status.isRealized) ...[
+                const Divider(height: 20),
+                if (item.merchantWarrantyStart != null ||
+                    item.merchantWarrantyEnd != null) ...[
+                  _kv('商家保修开始', _dateText(item.merchantWarrantyStart)),
+                  _kv('商家保修到期', _dateText(item.merchantWarrantyEnd)),
+                ] else
+                  InkWell(
+                    onTap: _busy
+                        ? null
+                        : () => _fillMerchantWarranty(item.id),
+                    child: _kv('商家保修', '未填写，点这里补 ›'),
+                  ),
+              ],
               if (item.sellDate != null) ...[
                 const Divider(height: 20),
                 _kv('卖出日期', _dateText(item.sellDate)),
@@ -366,6 +387,10 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
             ),
           ),
         ],
+
+        const SizedBox(height: 16),
+        _sectionTitle('保修卡'),
+        _warrantyCardSection(item),
 
         const SizedBox(height: 20),
         _sectionTitle('改状态'),
@@ -436,6 +461,91 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
         const SizedBox(height: 32),
       ],
     );
+  }
+
+  /// 保修卡区块：未卖出给说明，未生成给生成入口，已生成给查看与重置。
+  Widget _warrantyCardSection(Item item) {
+    final cardAsync = ref.watch(warrantyCardProvider(widget.itemId));
+    return cardAsync.when(
+      loading: () => const SizedBox(height: 60),
+      error: (e, _) => Text('保修卡读取失败：$e'),
+      data: (card) {
+        if (!item.status.isRealized) {
+          return Text(
+            '标记已卖出后可以生成保修卡。',
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (card != null)
+              GestureDetector(
+                onTap: () => _openWarrantyCard(item),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.memory(
+                    card.bytes,
+                    height: 190,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: _busy ? null : () => _openWarrantyCard(item),
+                  icon: Icon(
+                    card == null
+                        ? Icons.receipt_long
+                        : Icons.visibility_outlined,
+                    size: 18,
+                  ),
+                  label: Text(card == null ? '生成保修卡' : '查看保修卡'),
+                ),
+                if (card != null)
+                  TextButton.icon(
+                    onPressed: _busy ? null : _resetWarrantyCard,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('重置保修卡'),
+                  ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 打开保修卡弹窗：生成、查看、导出、重置都在里面，与列表页共用同一个。
+  Future<void> _openWarrantyCard(Item item) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => WarrantyCardDialog(item: item),
+    );
+    if (!mounted) return;
+    ref.invalidate(warrantyCardProvider(item.id));
+  }
+
+  Future<void> _resetWarrantyCard() async {
+    final ok = await _confirm(
+      '重置保修卡',
+      '会删掉这张图；商家保修日期保留，可以改完再生成。',
+    );
+    if (!ok) return;
+    await _run(() async {
+      final db = ref.read(databaseProvider);
+      await WarrantyCardService(
+        db: db,
+        attachments: AttachmentDao(db),
+        deviceId: ref.read(deviceIdProvider),
+      ).reset(widget.itemId);
+      ref.invalidate(warrantyCardProvider(widget.itemId));
+    }, '保修卡已重置');
   }
 
   Widget _imageGrid() {
@@ -570,6 +680,10 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
     final tradeController = TextEditingController();
     final detail = await ref.read(itemRepositoryProvider).load(itemId);
     var sellDate = DateTime.now();
+    // 商家保修：默认今天起保一年，弹窗里可改；已有值不覆盖。
+    final today = DateTime.now();
+    var merchantStart = DateTime(today.year, today.month, today.day);
+    var merchantEnd = addOneYear(merchantStart);
     // 置换是「这次卖出顺带收了一台旧机」。默认折叠：
     // 大多数人就是普通卖货，不该一进来先看见两个用不上的输入框。
     var hasTradeIn = false;
@@ -589,6 +703,8 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
           item.listPriceCents != null ||
           (item.tradeInCents != null && item.tradeInCents! > 0);
       sellDate = item.sellDate ?? sellDate;
+      merchantStart = item.merchantWarrantyStart ?? merchantStart;
+      merchantEnd = item.merchantWarrantyEnd ?? merchantEnd;
     }
 
     if (!mounted) return;
@@ -598,6 +714,7 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
     String? platformError;
     String? listError;
     String? tradeError;
+    String? merchantError;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -659,6 +776,80 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
                     ),
                   ),
                 ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: ctx,
+                            initialDate: merchantStart,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) {
+                            setLocal(() => merchantStart = picked);
+                          }
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: '商家保修开始',
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  DateRange.formatDate(merchantStart),
+                                ),
+                              ),
+                              const Icon(Icons.calendar_today_outlined, size: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: ctx,
+                            initialDate: merchantEnd,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (picked != null) {
+                            setLocal(() => merchantEnd = picked);
+                          }
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: '商家保修到期',
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(DateRange.formatDate(merchantEnd)),
+                              ),
+                              const Icon(Icons.calendar_today_outlined, size: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (merchantError != null)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      merchantError!,
+                      style: TextStyle(
+                        color: Theme.of(ctx).colorScheme.error,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 4),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
@@ -712,6 +903,11 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
 
                   listError = null;
                   tradeError = null;
+                  merchantError = merchantWarrantyError(
+                    ItemStatus.sold,
+                    merchantStart,
+                    merchantEnd,
+                  );
                   if (hasTradeIn) {
                     final listText = listController.text.trim();
                     final tradeText = tradeController.text.trim();
@@ -734,7 +930,8 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
                 if (priceError != null ||
                     platformError != null ||
                     listError != null ||
-                    tradeError != null) {
+                    tradeError != null ||
+                    merchantError != null) {
                   return;
                 }
                 Navigator.pop(ctx, true);
@@ -768,8 +965,81 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
             sellPlatform: platformController.text.trim(),
             listPriceCents: list?.cents,
             tradeInCents: trade?.cents,
+            merchantWarrantyStart: merchantStart,
+            merchantWarrantyEnd: merchantEnd,
           ),
       '已标记售出',
+    );
+  }
+
+  /// 补填商家保修（升级前已卖出的老记录）。
+  ///
+  /// 与「标记已卖出」分开走：那条路径会重写卖出价与状态，这里只补两个日期。
+  Future<void> _fillMerchantWarranty(String itemId) async {
+    final today = DateTime.now();
+    var start = DateTime(today.year, today.month, today.day);
+    var end = addOneYear(start);
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('补填商家保修'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: ctx,
+                    initialDate: start,
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked != null) setLocal(() => start = picked);
+                },
+                child: InputDecorator(
+                  decoration: const InputDecoration(labelText: '商家保修开始'),
+                  child: Text(DateRange.formatDate(start)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              InkWell(
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: ctx,
+                    initialDate: end,
+                    firstDate: DateTime(2000),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked != null) setLocal(() => end = picked);
+                },
+                child: InputDecorator(
+                  decoration: const InputDecoration(labelText: '商家保修到期'),
+                  child: Text(DateRange.formatDate(end)),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    await _run(
+      () => ref
+          .read(itemRepositoryProvider)
+          .setMerchantWarranty(itemId, start: start, end: end),
+      '商家保修已补填',
     );
   }
 

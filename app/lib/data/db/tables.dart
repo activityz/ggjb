@@ -98,6 +98,28 @@ class Items extends Table {
   /// 保修到期日。只在「在保」时有值。
   DateTimeColumn get warrantyEnd => dateTime().nullable()();
 
+  // -------------------------------------------------------------------
+  // v7 新增列（序列号 + 商家保修）。同样必须追加在最后，原因同上。
+  //
+  // 注意语义：上面 v6 那三列 `warranty_*` 是**厂家保修**（厂商还剩多久，
+  // 收货议价时记录）；下面两列是**商家保修**（本店对买家承诺的区间，
+  // 出货时才产生）。两套信息互不覆盖，界面与导出里分别叫「厂家保修」
+  // 与「商家保修」。
+  // -------------------------------------------------------------------
+
+  /// 序列号文本。非必填、不唯一。
+  ///
+  /// 与 `attachments.role = 'serial'` 的铭牌照片并存：照片是证据，
+  /// 文本是可查、可印在保修卡上的凭据。不建唯一索引——同一串号会被
+  /// 先录错后修正，拆机件也可能重号，唯一约束只会把用户卡在保存上。
+  TextColumn get serial => text().nullable()();
+
+  /// 商家保修开始日（本店承诺的区间起点）。
+  DateTimeColumn get merchantWarrantyStart => dateTime().nullable()();
+
+  /// 商家保修到期日。与开始日一起构成给买家的承诺区间。
+  DateTimeColumn get merchantWarrantyEnd => dateTime().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

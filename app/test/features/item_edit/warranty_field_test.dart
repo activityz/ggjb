@@ -140,8 +140,8 @@ void main() {
 
     expect(warrantyDropdown(), findsOneWidget);
     expect(find.text('无保修'), findsWidgets);
-    expect(find.text('保修开始'), findsNothing);
-    expect(find.text('保修到期'), findsNothing);
+    expect(find.text('厂家保修开始'), findsNothing);
+    expect(find.text('厂家保修到期'), findsNothing);
     await close(tester);
   });
 
@@ -149,20 +149,20 @@ void main() {
     await open(tester);
     await pickWarranty(tester, '在保');
 
-    await scrollTo(tester, find.text('保修开始'));
-    expect(find.text('保修开始'), findsOneWidget);
-    expect(find.text('保修到期'), findsOneWidget);
+    await scrollTo(tester, find.text('厂家保修开始'));
+    expect(find.text('厂家保修开始'), findsOneWidget);
+    expect(find.text('厂家保修到期'), findsOneWidget);
 
     final now = DateTime.now();
     final today =
         '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     expect(
-      dateTextIn('保修开始', today),
+      dateTextIn('厂家保修开始', today),
       findsOneWidget,
       reason: '新建时买入日期默认今天，保修开始应跟着预填',
     );
     expect(
-      dateTextIn('保修到期', '未填'),
+      dateTextIn('厂家保修到期', '未填'),
       findsOneWidget,
       reason: '到期日不猜，留给用户选',
     );
@@ -203,12 +203,12 @@ void main() {
         );
 
     await open(tester, itemId: 'w1');
-    await scrollTo(tester, find.text('保修开始'));
-    expect(find.text('保修开始'), findsOneWidget);
-    expect(dateTextIn('保修到期', '2026-05-01'), findsOneWidget);
+    await scrollTo(tester, find.text('厂家保修开始'));
+    expect(find.text('厂家保修开始'), findsOneWidget);
+    expect(dateTextIn('厂家保修到期', '2026-05-01'), findsOneWidget);
 
     await pickWarranty(tester, '已过保');
-    expect(find.text('保修开始'), findsNothing, reason: '不在保就不展开日期');
+    expect(find.text('厂家保修开始'), findsNothing, reason: '不在保就不展开日期');
 
     await tapSave(tester);
 
