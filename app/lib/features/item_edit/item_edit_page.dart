@@ -255,7 +255,7 @@ class _ItemEditPageState extends ConsumerState<ItemEditPage> {
               Expanded(
                 child: DictField(
                   controller: _storage,
-                  label: '内存规格',
+                  label: '规格',
                   kind: DictSeeds.kindStorage,
                   hint: '8+256',
                 ),

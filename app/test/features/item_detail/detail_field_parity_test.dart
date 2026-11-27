@@ -136,9 +136,14 @@ void main() {
 
     await open(tester, 'p1');
 
-    for (final label in ['品牌', '型号', '内存规格', '颜色', '分类', '序列号']) {
+    for (final label in ['品牌', '型号', '规格', '颜色', '分类', '序列号']) {
       expect(find.text(label), findsOneWidget, reason: '详情页缺少字段名「$label」');
     }
+    expect(
+      find.text('内存规格'),
+      findsNothing,
+      reason: '这一项已改名「规格」，旧名字不该再出现',
+    );
     for (final value in ['Apple', 'iPhone 13', '128G', '蓝色', '手机', 'F2LX1234ABCD']) {
       expect(find.text(value), findsWidgets, reason: '详情页缺少值「$value」');
     }
@@ -199,6 +204,22 @@ void main() {
 
     expect(find.text('厂家保修开始'), findsOneWidget);
     expect(find.text('厂家保修到期'), findsOneWidget);
+
+    await teardownTree(tester);
+  });
+
+  testWidgets('详情页文字可选中复制，但没有复制按钮', (tester) async {
+    await putItem('p6', serial: 'F2LX1234ABCD');
+
+    await open(tester, 'p6');
+
+    expect(
+      find.byType(SelectionArea),
+      findsWidgets,
+      reason: '内容区要被 SelectionArea 包住，值才能长按选中复制',
+    );
+    expect(find.byIcon(Icons.copy), findsNothing, reason: '不要复制图标');
+    expect(find.text('复制'), findsNothing, reason: '不要复制按钮');
 
     await teardownTree(tester);
   });

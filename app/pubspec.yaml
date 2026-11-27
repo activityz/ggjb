@@ -2,7 +2,7 @@ name: ggjb
 description: "个人二手交易利润记账（本地优先，Windows + Android）。"
 publish_to: 'none'
 
-version: 1.11.1+15
+version: 1.11.2+16
 
 environment:
   sdk: ^3.9.2

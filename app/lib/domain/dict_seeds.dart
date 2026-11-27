@@ -24,7 +24,7 @@ class DictSeeds {
   static const List<({String kind, String label})> kinds = [
     (kind: kindBrand, label: '品牌'),
     (kind: kindModel, label: '机型'),
-    (kind: kindStorage, label: '内存规格'),
+    (kind: kindStorage, label: '规格'),
     (kind: kindColor, label: '颜色'),
     (kind: kindCategory, label: '分类'),
     (kind: kindSource, label: '买入来源'),

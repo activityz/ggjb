@@ -124,7 +124,11 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
         ? context.palette.warning
         : moneyColor(profit, context.palette);
 
-    return ListView(
+    // 整块内容包一层 SelectionArea：值（序列号、型号这些）要能长按/拖选复制，
+    // 但不加任何复制按钮。没有逐项换成 SelectableText —— 那会自己实现长按选择，
+    // 把长按从父级手势抢走（图片格子删除、商家保修补填都靠长按/点击）。
+    return SelectionArea(
+      child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
         Row(
@@ -196,7 +200,7 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
             children: [
               _attrRow('品牌', item.brand),
               _attrRow('型号', item.model),
-              _attrRow('内存规格', item.storage),
+              _attrRow('规格', item.storage),
               _attrRow('颜色', item.color),
               _attrRow('分类', item.category),
               _attrRow('序列号', item.serial),
@@ -464,6 +468,7 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
         ),
         const SizedBox(height: 32),
       ],
+      ),
     );
   }
 
@@ -1236,9 +1241,11 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
       );
   }
 
-  Future<void> _deleteImage(String id) async {
-    final ok = await _confirm('删除这张图片', '图片会从库里移除。');
-    if (!ok) return;
+  Future<void> _deleteImage(String id, {bool confirmed = false}) async {
+    if (!confirmed) {
+      final ok = await _confirm('删除这张图片', '图片会从库里移除。');
+      if (!ok) return;
+    }
     await _run(() => ref.read(itemRepositoryProvider).deleteImage(id), '已删除图片');
   }
 
@@ -1272,25 +1279,18 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
               top: 4,
               child: Row(
                 children: [
-                  // 图片本身是深色居多，按钮加个底才看得清。
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.black45,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: TextButton.icon(
-                      onPressed: () =>
-                          _saveImage(title: title, mime: mime, bytes: bytes),
-                      icon: const Icon(
-                        Icons.download_outlined,
-                        size: 18,
-                        color: Colors.white,
-                      ),
-                      label: const Text(
-                        '保存',
-                        style: TextStyle(color: Colors.white, fontSize: 13),
-                      ),
-                    ),
+                  // 删除放在最左：破坏性动作离手指最远的那一端。
+                  _viewerAction(
+                    icon: Icons.delete_outline,
+                    label: '删除',
+                    onPressed: () => _deleteImageFromViewer(ctx, id),
+                  ),
+                  const SizedBox(width: 4),
+                  _viewerAction(
+                    icon: Icons.download_outlined,
+                    label: '保存',
+                    onPressed: () =>
+                        _saveImage(title: title, mime: mime, bytes: bytes),
                   ),
                   const SizedBox(width: 4),
                   IconButton(
@@ -1304,6 +1304,36 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
         ),
       ),
     );
+  }
+
+  /// 大图里那颗按钮：图片多为深色底，加个半透明底才看得清。
+  Widget _viewerAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black45,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: TextButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18, color: Colors.white),
+        label: Text(
+          label,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+        ),
+      ),
+    );
+  }
+
+  /// 在大图里删除：先确认，确认后先关弹窗再删 —— 图没了弹窗还开着会像没删掉。
+  Future<void> _deleteImageFromViewer(BuildContext ctx, String id) async {
+    final ok = await _confirm('删除这张图片', '图片会从库里移除。');
+    if (!ok || !mounted) return;
+    if (ctx.mounted) Navigator.of(ctx).pop();
+    await _deleteImage(id, confirmed: true);
   }
 
   /// 把当前这张原图存到用户选的位置。

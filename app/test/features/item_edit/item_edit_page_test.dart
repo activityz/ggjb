@@ -203,4 +203,13 @@ void main() {
     expect(row.deviceId, 'seed-device', reason: '编辑不能改写最初录入设备');
     await close(tester);
   });
+
+  testWidgets('「内存规格」已改名「规格」', (tester) async {
+    await open(tester);
+
+    expect(find.text('规格'), findsOneWidget);
+    expect(find.text('内存规格'), findsNothing);
+
+    await close(tester);
+  });
 }
