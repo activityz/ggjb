@@ -14,6 +14,7 @@ import '../data/repo/item_repository.dart';
 import '../domain/date_period.dart';
 import '../domain/enums.dart';
 import '../domain/profit.dart';
+import '../features/item_detail/image_saver.dart';
 
 /// 数据库实例。在 `main()` 里 override 成真实实例。
 ///
@@ -376,6 +377,9 @@ final attachmentBytesProvider = FutureProvider.family<List<int>?, String>((
 ) async {
   return ref.watch(itemRepositoryProvider).fullImage(id);
 });
+
+/// 把图片存到用户选的位置。生产环境用系统「另存为」，测试里覆盖成假实现。
+final imageSaverProvider = Provider<ImageSaver>((ref) => ImageSaver());
 
 final dictDaoProvider = Provider<DictDao>(
   (ref) => DictDao(ref.watch(databaseProvider)),

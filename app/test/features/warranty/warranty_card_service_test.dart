@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
@@ -7,6 +8,7 @@ import 'package:ggjb/data/dao/attachment_dao.dart';
 import 'package:ggjb/data/db/app_database.dart';
 import 'package:ggjb/domain/enums.dart';
 import 'package:ggjb/features/warranty/warranty_card_service.dart';
+import 'package:image/image.dart' as img;
 
 /// seam: WarrantyCardService —— 保修卡的存、查、换、重置。
 ///
@@ -52,6 +54,13 @@ void main() {
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
     marker,
   ]);
+
+  /// 真能解码的 PNG。缩略图要让 service 去缩，喂假头是解不开的。
+  Uint8List realPng(int width, int height) {
+    final canvas = img.Image(width: width, height: height);
+    img.fill(canvas, color: img.ColorRgb8(200, 30, 30));
+    return Uint8List.fromList(img.encodePng(canvas));
+  }
 
   test('保存后查得到，字节原样返回', () async {
     await putItem('i1');
@@ -103,6 +112,22 @@ void main() {
   test('没有卡的商品查出来是 null', () async {
     await putItem('i4');
     expect(await service.latest('i4'), isNull);
+  });
+
+  /// S1：保存时一并写缩略图，长边 256。
+  ///
+  /// 缺了这一步，详情页图片模块只会拿到空 thumb，然后永久转圈——
+  /// 这正是用户报的那个缺陷的写入侧成因。
+  test('保存时一并写入缩略图，长边不超过 256', () async {
+    await putItem('i6');
+    await service.save('i6', realPng(1080, 1620));
+
+    final row = (await db.select(db.attachments).get()).single;
+    expect(row.thumb, isNotNull, reason: '缩略图缺失，视图就只能永久转圈');
+
+    final thumb = img.decodePng(Uint8List.fromList(row.thumb!))!;
+    expect(math.max(thumb.width, thumb.height), 256);
+    expect(thumb.width / thumb.height, closeTo(1080 / 1620, 0.01));
   });
 
   test('重置后再保存新卡能正常查到', () async {

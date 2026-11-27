@@ -74,6 +74,10 @@ class _WarrantyCardDialogState extends ConsumerState<WarrantyCardDialog> {
 
   /// 屏幕外渲染卡面再截图：`Offstage` 不绘制，放行内又会被布局裁剪。
   Future<Uint8List?> _renderPng(Item item) async {
+    if (!mounted) return null;
+    // logo 首帧是异步解码：不预热的话，冷启动第一张卡会截到空白（设计 D6）。
+    await precacheImage(const AssetImage(shopLogoAsset), context);
+    if (!mounted) return null;
     final key = GlobalKey();
     final overlay = Overlay.of(context, rootOverlay: true);
     final entry = OverlayEntry(

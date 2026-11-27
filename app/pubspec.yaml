@@ -2,7 +2,7 @@ name: ggjb
 description: "个人二手交易利润记账（本地优先，Windows + Android）。"
 publish_to: 'none'
 
-version: 1.10.0+12
+version: 1.11.1+15
 
 environment:
   sdk: ^3.9.2
@@ -73,3 +73,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/brand/

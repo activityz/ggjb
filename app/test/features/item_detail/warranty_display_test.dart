@@ -12,7 +12,7 @@ import 'package:ggjb/features/item_detail/item_detail_page.dart';
 /// seam: ItemDetailPage「时间与渠道」里的保修行。
 ///
 /// 只认状态、不认日期：在保才展示起止日；已过保只留一行「已过保」；
-/// 无保修什么都不显示（旧单据不该凭空长出一行「无保修」）。
+/// 无保修也占一行「厂家保修：无保修」——三种状态都要看得见。
 class _Launcher extends StatelessWidget {
   const _Launcher({required this.itemId});
 
@@ -164,14 +164,15 @@ void main() {
     await teardownTree(tester);
   });
 
-  testWidgets('无保修：一行都不显示', (tester) async {
+  testWidgets('无保修：占一行写明「无保修」，不展示日期', (tester) async {
     await put('w4');
     await open(tester, 'w4');
 
-    await scrollTo(tester, find.text('买入成色'));
-    expect(find.text('保修'), findsNothing);
-    expect(find.text('无保修'), findsNothing);
+    await scrollTo(tester, find.text('厂家保修'));
+    expect(find.text('厂家保修'), findsOneWidget);
+    expect(find.text('无保修'), findsOneWidget, reason: '三态都要看得见，读者才分得清');
     expect(find.text('厂家保修开始'), findsNothing);
+    expect(find.text('厂家保修到期'), findsNothing);
 
     await teardownTree(tester);
   });

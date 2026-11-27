@@ -25,6 +25,7 @@ import '../common/dict_field.dart';
 import '../item_edit/item_edit_page.dart';
 import '../warranty/warranty_card_dialog.dart';
 import '../warranty/warranty_card_service.dart';
+import 'image_saver.dart';
 
 /// 商品详情：看盈亏、看图片、改状态。
 class ItemDetailPage extends ConsumerStatefulWidget {
@@ -116,7 +117,6 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
   }
 
   Widget _body(ItemWithExpenses detail) {
-    final scheme = Theme.of(context).colorScheme;
     final item = detail.item;
     final line = detail.toProfitLine();
     final profit = line.profitCents;
@@ -141,24 +141,6 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
             Chip(label: Text(item.status.label)),
           ],
         ),
-        // 品牌 · 型号 · 内存规格 · 颜色，有哪项显示哪项。
-        if ([
-          item.brand,
-          item.model,
-          item.storage,
-          item.color,
-        ].any((e) => e != null && e.isNotEmpty)) ...[
-          const SizedBox(height: 4),
-          Text(
-            [
-              item.brand,
-              item.model,
-              item.storage,
-              item.color,
-            ].where((e) => e != null && e.isNotEmpty).join(' · '),
-            style: TextStyle(color: scheme.onSurfaceVariant),
-          ),
-        ],
         // 置换单要一眼可辨：状态 Chip 回答「卖没卖」，这里回答「怎么卖的」。
         if (line.isTradeIn) ...[
           const SizedBox(height: 10),
@@ -201,6 +183,26 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
           ),
         ],
         const SizedBox(height: 16),
+
+        // 商品属性：凭什么认出这台机器。六项固定成行（没填就是「—」），
+        // 不再把品牌型号内存颜色拼成一行灰字——那样既没有字段名，
+        // 长型号还会把四个值挤成一团。
+        _sectionTitle('商品属性'),
+        GlassCard(
+          radius: 14,
+          blur: 12,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              _attrRow('品牌', item.brand),
+              _attrRow('型号', item.model),
+              _attrRow('内存规格', item.storage),
+              _attrRow('颜色', item.color),
+              _attrRow('分类', item.category),
+              _attrRow('序列号', item.serial),
+            ],
+          ),
+        ),
 
         // 利润卡：口径完全来自 domain/profit.dart
         GlassCard(
@@ -324,13 +326,15 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
               _kv('买入成色', item.conditionBought ?? '—'),
               if (item.batteryHealth != null)
                 _kv('电池健康', '${item.batteryHealth}%'),
-              // 保修：在保才给起止日；已过保只留状态一行；无保修不提（旧单据
-              // 一律是 none，凭空多一行「无保修」只会让老记录看起来变脏了）。
+              // 保修：三态都要看得见。「无保修」也占一行 —— 否则读的人分不清
+              // 「这台没录保修」和「这台其实是店保」。
               if (item.warrantyStatus == WarrantyStatus.active) ...[
                 _kv('厂家保修开始', _dateText(item.warrantyStart)),
                 _kv('厂家保修到期', _dateText(item.warrantyEnd)),
               ] else if (item.warrantyStatus == WarrantyStatus.expired)
-                _kv('厂家保修', '已过保'),
+                _kv('厂家保修', '已过保')
+              else
+                _kv('厂家保修', '无保修'),
               // 商家保修：卖出后才有的一段承诺区间。老数据没填过就留一个
               // 补填入口，而不是编一个日期或者干脆不显示。
               if (item.status.isRealized) ...[
@@ -631,6 +635,37 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
       style: Theme.of(context).textTheme.labelLarge?.copyWith(
         color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
+    ),
+  );
+
+  /// 属性行：左侧固定宽度字段名，右侧值（长值折行、右对齐）。
+  ///
+  /// 与 [_kv] 的区别是 `_kv` 用 `spaceBetween` 两端对齐，长值会把字段名挤走；
+  /// 属性卡里的型号可能很长（`MacBook Pro 14 M3 Pro 18G 512G`），必须让值折行。
+  Widget _attrRow(String label, String? value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 64,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 13,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            (value == null || value.isEmpty) ? '—' : value,
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+        ),
+      ],
     ),
   );
 
@@ -1208,8 +1243,23 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
   }
 
   Future<void> _viewImage(String id) async {
-    final bytes = await ref.read(itemRepositoryProvider).fullImage(id);
-    if (!mounted || bytes == null) return;
+    final repo = ref.read(itemRepositoryProvider);
+    final bytes = await repo.fullImage(id);
+    // 零长度也当「没有图」：没有内容就不该给保存入口，免得存出一个空文件。
+    if (!mounted || bytes == null || bytes.isEmpty) return;
+
+    final metas = await repo.attachmentsOf(widget.itemId);
+    String mime = 'image/png';
+    for (final meta in metas) {
+      if (meta.id == id) {
+        mime = meta.mime;
+        break;
+      }
+    }
+    final detail = await ref.read(itemDetailProvider(widget.itemId).future);
+    if (!mounted) return;
+    final title = detail?.item.title ?? '图片';
+
     await showDialog<void>(
       context: context,
       builder: (ctx) => Dialog(
@@ -1220,9 +1270,34 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
             Positioned(
               right: 4,
               top: 4,
-              child: IconButton(
-                onPressed: () => Navigator.pop(ctx),
-                icon: const Icon(Icons.close),
+              child: Row(
+                children: [
+                  // 图片本身是深色居多，按钮加个底才看得清。
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black45,
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: TextButton.icon(
+                      onPressed: () =>
+                          _saveImage(title: title, mime: mime, bytes: bytes),
+                      icon: const Icon(
+                        Icons.download_outlined,
+                        size: 18,
+                        color: Colors.white,
+                      ),
+                      label: const Text(
+                        '保存',
+                        style: TextStyle(color: Colors.white, fontSize: 13),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
               ),
             ),
           ],
@@ -1230,35 +1305,82 @@ class _ItemDetailPageState extends ConsumerState<ItemDetailPage> {
       ),
     );
   }
+
+  /// 把当前这张原图存到用户选的位置。
+  ///
+  /// 「选位置 + 写盘」在 `ImageSaver` 里，这里只负责按结果说话：
+  /// 取消不吭声，失败说失败，成功说存哪了。
+  Future<void> _saveImage({
+    required String title,
+    required String mime,
+    required Uint8List bytes,
+  }) async {
+    final outcome = await ref
+        .read(imageSaverProvider)
+        .save(title: title, mime: mime, bytes: bytes);
+    if (!mounted) return;
+    switch (outcome) {
+      case SaveOutcomeSaved(:final path):
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text('已保存：$path')));
+      case SaveOutcomeCancelled():
+        break;
+      case SaveOutcomeFailed(:final message):
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
 }
 
+/// 图片模块里的一个格子。
+///
+/// 三态必须分开表达，这是用户报的「一直转圈」的根因：
+/// - `loading`：真的在查库 —— 才允许转圈
+/// - `data(null)` / 空字节：**不是加载中**，是持久状态。回退读原图；
+///   原图也空就显示「无预览」，绝不常驻转圈
+/// - `error`：同样给「无预览」，不把堆栈甩给用户
 class _ThumbView extends ConsumerWidget {
   const _ThumbView({required this.attachmentId});
 
   final String attachmentId;
 
+  static const double _size = 84;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(attachmentThumbProvider(attachmentId));
-    const size = 84.0;
+    final thumbAsync = ref.watch(attachmentThumbProvider(attachmentId));
 
-    return async.maybeWhen(
-      data: (bytes) => bytes == null
-          ? _placeholder(context)
-          : Image.memory(
-              Uint8List.fromList(bytes),
-              width: size,
-              height: size,
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-            ),
-      orElse: () => _placeholder(context),
+    return thumbAsync.when(
+      loading: () => _spinner(context),
+      error: (_, _) => _noPreview(context),
+      data: (thumb) {
+        if (thumb != null && thumb.isNotEmpty) return _image(thumb);
+        // 缩略图缺失（保修卡旧数据、别处同步来的附件）→ 回退原图
+        final fullAsync = ref.watch(attachmentBytesProvider(attachmentId));
+        return fullAsync.when(
+          loading: () => _spinner(context),
+          error: (_, _) => _noPreview(context),
+          data: (bytes) => bytes == null || bytes.isEmpty
+              ? _noPreview(context)
+              : _image(bytes),
+        );
+      },
     );
   }
 
-  Widget _placeholder(BuildContext context) => Container(
-    width: 84,
-    height: 84,
+  Widget _image(List<int> bytes) => Image.memory(
+    Uint8List.fromList(bytes),
+    width: _size,
+    height: _size,
+    fit: BoxFit.cover,
+    gaplessPlayback: true,
+  );
+
+  Widget _spinner(BuildContext context) => Container(
+    width: _size,
+    height: _size,
     color: Theme.of(context).colorScheme.surfaceContainerHighest,
     child: const Center(
       child: SizedBox(
@@ -1268,4 +1390,30 @@ class _ThumbView extends ConsumerWidget {
       ),
     ),
   );
+
+  Widget _noPreview(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: _size,
+      height: _size,
+      color: scheme.surfaceContainerHighest,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.image_not_supported_outlined,
+              size: 18,
+              color: scheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '无预览',
+              style: TextStyle(fontSize: 8, color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

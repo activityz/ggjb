@@ -79,6 +79,12 @@
   一直点不动，只是此前没人用手点过。现在无 `onTap/onLongPress` 时不装手势层；要证明「能点」必须用 `tester.tap`
   走真实指针事件，**直接调用 `onTap!()` 的测试对这个故障完全瞎**。
 
+- **`attachments.thumb` 可为空，视图必须回退原图**：保修卡等写入路径只写 `bytes`，`thumb` 留 NULL。
+  详情页 `_ThumbView` 曾用 `maybeWhen` 把「空缩略图」和「加载中」共用一个 `CircularProgressIndicator`
+  占位——空 thumb 是**持久状态**，于是永久转圈。现在三态分开：`loading` 才转圈；空 thumb 回退
+  `attachmentBytesProvider`；两者都空显示「无预览」。`attachments.bytes` 是 NOT NULL 列，
+  「无原图」在库里只能以零长度 blob 表达。
+
 ## 5. 纪律
 
 - **构建必须经用户确认**：`flutter build apk` / `flutter build windows` 这类产出安装包的命令
